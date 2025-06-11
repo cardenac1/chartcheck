@@ -101,23 +101,24 @@
             margin-bottom: 20px;
         }
 
-        .patient-entry {
-            background: var(--bg-tertiary);
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border: 1px solid var(--border-color);
-            font-size: 1.4em;
-	    font-weight: bold;    /* ← add this */
-        }
 
-        @media (min-width: 768px) {
-            .patient-entry {
-                font-size: 1.1em;
-            }
-        }
+.patient-entry {
+    background: var(--bg-tertiary);
+    padding: 15px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid var(--border-color);
+    font-size: 2em;      /* ← Increased from 1.4em */
+    font-weight: bold;
+}
+
+@media (min-width: 768px) {
+    .patient-entry {
+        font-size: 1.5em;    /* ← Increased from 1.1em */
+    }
+}
 
         .patient-entry:hover {
             border-color: var(--accent-green);
@@ -142,14 +143,11 @@
             font-weight: bold;
         }
 
-        .details-page {
-            display: none;
-            background: var(--bg-secondary);
-            padding: 15px;
-            border-radius: 10px;
-            border: 2px solid var(--accent-green);
-            box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
-        }
+.details-page {
+    position: relative;
+}
+
+
 
         @media (min-width: 768px) {
             .details-page {
@@ -543,12 +541,6 @@
     font-weight: bold;
 }
 
-.details-page {
-    max-height: 100vh;
-    overflow-y: auto;
-    position: relative;
-}
-
 
 
 
@@ -557,18 +549,14 @@
 <body>
     <div class="container">
         
-        <div class="upload-section">
-            <label for="csvFile" class="file-upload-label">Upload CSV File</label>
-            <input type="file" id="csvFile" accept=".csv">
-            <button class="button button-secondary" onclick="exportCSV()">Export CSV</button>
+   <div class="upload-section">
+    <label for="csvFile" class="file-upload-label">Upload CSV File</label>
+    <input type="file" id="csvFile" accept=".csv">
+    <button class="button button-secondary" onclick="exportCSV()">Export CSV</button>
     <button class="button button-primary" onclick="showUpdateListModal()">Update List</button>
-
-        </div>
-
-
-<div class="dropdown-toggle">
     <button class="button button-secondary" onclick="toggleColumnDropdown()">Column selector ▼</button>
-    <div id="columnDropdown" class="column-toggle-container" style="display: none;">
+    
+    <div id="columnDropdown" class="column-toggle-container" style="display: none; margin-top: 15px;">
         <div id="columnSelector" class="column-selector"></div>
     </div>
 </div>
@@ -617,6 +605,8 @@
                 <label class="detail-label">VIOLIN</label>
             <button class="button button-primary" onclick="showImportModal()" style="margin-bottom: 20px;">Import Data</button>
                 <button class="button button-secondary" onclick="showTableView()">Show Table Format</button>
+    <button class="button button-secondary" onclick="showGraphView()">Graph</button>  <!-- ADD THIS LINE -->
+
                 <textarea id="violinSection" class="detail-input"></textarea>
             </div>
             
@@ -670,6 +660,28 @@
     </div>
 
 
+
+
+<!-- Graph View Modal -->
+<div id="graphModal" class="modal">
+    <div class="modal-content">
+        <span class="close-modal" onclick="closeGraphModal()">&times;</span>
+        <h2>Vital Signs Graphs</h2>
+        <div style="margin-bottom: 20px;">
+            <button class="button button-primary" onclick="showVitalGraph('temp')">Temperature</button>
+            <button class="button button-primary" onclick="showVitalGraph('hr')">Heart Rate</button>
+            <button class="button button-primary" onclick="showVitalGraph('bp')">Blood Pressure</button>
+            <button class="button button-primary" onclick="showVitalGraph('o2')">O2 Saturation</button>
+        </div>
+        <canvas id="vitalChart" width="400" height="300"></canvas>
+    </div>
+</div>
+
+
+
+
+
+
 <!-- Update List Modal -->
 <div id="updateListModal" class="modal">
     <div class="modal-content">
@@ -683,6 +695,9 @@
 
     <!-- Include Papa Parse from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+
+<!-- Include Chart.js from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 
     <script>
         let csvData = [];
@@ -950,6 +965,12 @@ function saveToLocalStorage() {
             
             document.getElementById('patientList').classList.add('hidden');
             document.getElementById('detailsPage').style.display = 'block';
+
+    // Hide the upload section and column selector when in details view
+    document.querySelector('.upload-section').style.display = 'none';
+    document.querySelector('.dropdown-toggle').style.display = 'none';
+
+
             
             // Populate fields
             document.getElementById('detailName').value = patient.NAME || '';
@@ -993,6 +1014,9 @@ function saveToLocalStorage() {
         function returnToList() {
             saveCurrentPatient();
             displayPatientList();
+   // Show the upload section and column selector when returning to list
+    document.querySelector('.upload-section').style.display = 'block';
+    document.querySelector('.dropdown-toggle').style.display = 'block';
         }
 
         function previousPatient() {
@@ -1009,12 +1033,26 @@ function saveToLocalStorage() {
             }
         }
 
-        function deleteEntry() {
-            if (confirm('Are you sure you want to delete this entry?')) {
-                csvData.splice(currentPatientIndex, 1);
-                returnToList();
-            }
-        }
+
+
+function deleteEntry() {
+    if (confirm('Are you sure you want to delete this entry?')) {
+        // Delete the entry at the current index
+        csvData.splice(currentPatientIndex, 1);
+        
+        // Save to localStorage
+        saveToLocalStorage();
+        
+        // Return to list WITHOUT saving current patient (since we just deleted it)
+        displayPatientList();
+        
+        // Show the upload section and column selector when returning to list
+        document.querySelector('.upload-section').style.display = 'block';
+        document.querySelector('.dropdown-toggle').style.display = 'block';
+    }
+}
+
+
 
         function addNewEntry() {
             const newPatient = {
@@ -1289,17 +1327,26 @@ const extractLabValue = (pattern, name) => {
         const values = [];
         const dates = [];
         const times = [];
-        matches.forEach(match => {
-            const valueMatch = match.match(/[\d.]+/);
-            const dateTimeMatch = match.match(/\((\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2}:\d{2})\)/);
-            if (valueMatch) {
-                values.push(parseFloat(valueMatch[0]));
-                if (dateTimeMatch) {
-                    dates.push(dateTimeMatch[1]);
-                    times.push(dateTimeMatch[2]);
-                }
-            }
-        });
+        
+
+
+
+
+matches.forEach(match => {
+    // Look for the number AFTER the colon, not the first number in the string
+    const valueMatch = match.match(/:\s*([\d.]+)/);
+    const dateTimeMatch = match.match(/\((\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2}:\d{2})\)/);
+    if (valueMatch) {
+        values.push(parseFloat(valueMatch[1]));  // Note: use [1] not [0] because of capture group
+        if (dateTimeMatch) {
+            dates.push(dateTimeMatch[1]);
+            times.push(dateTimeMatch[2]);
+        }
+    }
+});
+
+
+
         data.labs[name] = values;
         if (dates.length > 0) {
             data.dates[name] = dates[0];
@@ -1321,7 +1368,7 @@ const extractLabValue = (pattern, name) => {
             extractLabValue('Sodium:', 'na');
             extractLabValue('Potassium:', 'k');
             extractLabValue('Chloride:', 'cl');
-            extractLabValue('C02:', 'co2');
+ 	    extractLabValue('CO2:', 'co2');  // Changed from C02 to CO2 (letter O not zero)
             extractLabValue('BUN:', 'bun');
             extractLabValue('Creatinine:', 'cr');
             extractLabValue('Glucose:', 'glu');
@@ -3274,6 +3321,240 @@ function updatePOD() {
 
 
 
+
+
+
+ let currentChart = null;
+
+function showGraphView() {
+    document.getElementById('graphModal').style.display = 'block';
+    // Show temperature by default
+    showVitalGraph('temp');
+}
+
+function closeGraphModal() {
+    document.getElementById('graphModal').style.display = 'none';
+    if (currentChart) {
+        currentChart.destroy();
+        currentChart = null;
+    }
+}
+
+function showVitalGraph(vitalType) {
+    if (!labData || !labData.vitals) {
+        alert('No vital signs data available. Please import data first.');
+        return;
+    }
+    
+    // Destroy existing chart if any
+    if (currentChart) {
+        currentChart.destroy();
+    }
+    
+    const ctx = document.getElementById('vitalChart').getContext('2d');
+    let datasets = [];
+    let title = '';
+    
+    // Get current date/time for x-axis
+    const now = new Date();
+    const labels = [];
+    
+    // Generate time labels (going backwards from now)
+    for (let i = 0; i < 24; i++) {
+        const time = new Date(now - (i * 60 * 60 * 1000)); // Go back 1 hour at a time
+        labels.unshift(time.toLocaleString('en-US', { 
+            month: 'numeric', 
+            day: 'numeric', 
+            hour: 'numeric', 
+            minute: '2-digit' 
+        }));
+    }
+    
+    switch(vitalType) {
+        case 'temp':
+            if (labData.vitals.temp && labData.vitals.temp.length > 0) {
+                title = 'Temperature (°C)';
+                const tempData = labData.vitals.temp.map((value, index) => ({
+                    x: labels[labels.length - labData.vitals.temp.length + index],
+                    y: value,
+                    backgroundColor: (value > 38 || value < 35) ? 'red' : 'blue',
+                    borderColor: (value > 38 || value < 35) ? 'red' : 'blue',
+                }));
+                datasets.push({
+                    label: 'Temperature',
+                    data: tempData,
+                    showLine: true,
+                    borderColor: 'blue',
+                    backgroundColor: 'blue',
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                });
+            }
+            break;
+            
+        case 'hr':
+            if (labData.vitals.hr && labData.vitals.hr.length > 0) {
+                title = 'Heart Rate (bpm)';
+                const age = labData.age || 50;
+                let hrMin = 60, hrMax = 100;
+                
+                if (age <= 1) {
+                    hrMin = 100; hrMax = 180;
+                } else if (age <= 3) {
+                    hrMin = 98; hrMax = 140;
+                } else if (age <= 5) {
+                    hrMin = 80; hrMax = 120;
+                } else if (age <= 12) {
+                    hrMin = 75; hrMax = 118;
+                }
+                
+                const hrData = labData.vitals.hr.map((value, index) => ({
+                    x: labels[labels.length - labData.vitals.hr.length + index],
+                    y: value,
+                    backgroundColor: (value < hrMin || value > hrMax) ? 'red' : 'green',
+                    borderColor: (value < hrMin || value > hrMax) ? 'red' : 'green',
+                }));
+                datasets.push({
+                    label: 'Heart Rate',
+                    data: hrData,
+                    showLine: true,
+                    borderColor: 'green',
+                    backgroundColor: 'green',
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                });
+            }
+            break;
+            
+        case 'bp':
+            if (labData.vitals.sbp && labData.vitals.sbp.length > 0) {
+                title = 'Blood Pressure (mmHg)';
+                const age = labData.age || 50;
+                let sbpMin = 90;
+                
+                if (age <= 1) {
+                    sbpMin = 70;
+                } else if (age <= 10) {
+                    sbpMin = 70 + (2 * age);
+                }
+                
+                const sbpData = labData.vitals.sbp.map((value, index) => ({
+                    x: labels[labels.length - labData.vitals.sbp.length + index],
+                    y: value,
+                    backgroundColor: (value < sbpMin || value > 180) ? 'red' : 'purple',
+                    borderColor: (value < sbpMin || value > 180) ? 'red' : 'purple',
+                }));
+                datasets.push({
+                    label: 'Systolic BP',
+                    data: sbpData,
+                    showLine: true,
+                    borderColor: 'purple',
+                    backgroundColor: 'purple',
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                });
+                
+                if (labData.vitals.dbp && labData.vitals.dbp.length > 0) {
+                    const dbpData = labData.vitals.dbp.map((value, index) => ({
+                        x: labels[labels.length - labData.vitals.dbp.length + index],
+                        y: value,
+                        backgroundColor: (value < 60 || value > 120) ? 'red' : 'orange',
+                        borderColor: (value < 60 || value > 120) ? 'red' : 'orange',
+                    }));
+                    datasets.push({
+                        label: 'Diastolic BP',
+                        data: dbpData,
+                        showLine: true,
+                        borderColor: 'orange',
+                        backgroundColor: 'orange',
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                    });
+                }
+            }
+            break;
+            
+        case 'o2':
+            if (labData.vitals.o2 && labData.vitals.o2.length > 0) {
+                title = 'O2 Saturation (%)';
+                const o2Data = labData.vitals.o2.map((value, index) => ({
+                    x: labels[labels.length - labData.vitals.o2.length + index],
+                    y: value,
+                    backgroundColor: value < 92 ? 'red' : 'cyan',
+                    borderColor: value < 92 ? 'red' : 'cyan',
+                }));
+                datasets.push({
+                    label: 'O2 Saturation',
+                    data: o2Data,
+                    showLine: true,
+                    borderColor: 'cyan',
+                    backgroundColor: 'cyan',
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                });
+            }
+            break;
+    }
+    
+    if (datasets.length === 0) {
+        alert('No data available for this vital sign.');
+        return;
+    }
+    
+    currentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels.slice(-datasets[0].data.length), // Only show labels for available data
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: title,
+                    font: {
+                        size: 18
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: 'Time'
+                    }
+                },
+                y: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: 'Value'
+                    }
+                }
+            },
+            elements: {
+                point: {
+                    radius: function(context) {
+                        const value = context.parsed.y;
+                        const dataset = context.dataset;
+                        const point = dataset.data[context.dataIndex];
+                        return point.backgroundColor === 'red' ? 8 : 6;
+                    }
+                }
+            }
+        }
+    });
+}
 
 
 
