@@ -959,40 +959,91 @@ function saveToLocalStorage() {
             console.log('First patient:', csvData[0]);
         }
 
-        function openDetails(index) {
-            currentPatientIndex = index;
-            const patient = csvData[index];
-            
-            document.getElementById('patientList').classList.add('hidden');
-            document.getElementById('detailsPage').style.display = 'block';
-
-    // Hide the upload section and column selector when in details view
+       function openDetails(index) {
+    // Add error checking
+    if (!csvData[index]) {
+        console.error('No patient data at index:', index);
+        alert('Error: Patient data not found');
+        return;
+    }
+    
+    currentPatientIndex = index;
+    const patient = csvData[index];
+    
+    console.log('Opening patient:', patient); // Debug log
+    
+    // First, make sure the details page is visible
+    document.getElementById('detailsPage').style.display = 'block';
+    document.getElementById('patientList').classList.add('hidden');
     document.querySelector('.upload-section').style.display = 'none';
-    document.querySelector('.dropdown-toggle').style.display = 'none';
-
-
-            
-            // Populate fields
-            document.getElementById('detailName').value = patient.NAME || '';
-            document.getElementById('detailRM').value = patient.RM || '';
-            document.getElementById('detailMRN').value = patient.MRN || '';
-            document.getElementById('detailATT').value = patient.ATT || '';
-            document.getElementById('detailProblems').value = patient.PROBLEMS || '';
-            document.getElementById('detailICS').value = patient.ICS || '';
-            document.getElementById('violinSection').value = patient.VIOLIN || '';
-            document.getElementById('ordersSection').value = patient.ORDERS || '';
-            document.getElementById('detailTodo').value = patient.Todo || '';
-            document.getElementById('detailPriority').value = patient.PRORITY || '';
-            
-            // Clear warnings initially
-            document.getElementById('warningMessages').innerHTML = '';
-            document.getElementById('warningMessages').classList.add('hidden');
-            
-            // Setup textarea listeners for auto-resize
-            setTimeout(() => {
-                setupTextareaListeners();
-            }, 100);
+    
+    // Add a small delay to ensure DOM is ready
+    setTimeout(() => {
+        // Check if elements exist before trying to set values
+        const nameField = document.getElementById('detailName');
+        if (nameField) {
+            nameField.value = patient.NAME || '';
+        } else {
+            console.error('detailName field not found!');
         }
+        
+        const rmField = document.getElementById('detailRM');
+        if (rmField) {
+            rmField.value = patient.RM || '';
+        }
+        
+        const mrnField = document.getElementById('detailMRN');
+        if (mrnField) {
+            mrnField.value = patient.MRN || '';
+        }
+        
+        const attField = document.getElementById('detailATT');
+        if (attField) {
+            attField.value = patient.ATT || '';
+        }
+        
+        const problemsField = document.getElementById('detailProblems');
+        if (problemsField) {
+            problemsField.value = patient.PROBLEMS || '';
+        }
+        
+        const icsField = document.getElementById('detailICS');
+        if (icsField) {
+            icsField.value = patient.ICS || '';
+        }
+        
+        const violinField = document.getElementById('violinSection');
+        if (violinField) {
+            violinField.value = patient.VIOLIN || '';
+        }
+        
+        const ordersField = document.getElementById('ordersSection');
+        if (ordersField) {
+            ordersField.value = patient.ORDERS || '';
+        }
+        
+        const todoField = document.getElementById('detailTodo');
+        if (todoField) {
+            todoField.value = patient.Todo || '';
+        }
+        
+        const priorityField = document.getElementById('detailPriority');
+        if (priorityField) {
+            priorityField.value = patient.PRORITY || '';
+        }
+        
+        // Clear warnings initially
+        const warningDiv = document.getElementById('warningMessages');
+        if (warningDiv) {
+            warningDiv.innerHTML = '';
+            warningDiv.classList.add('hidden');
+        }
+        
+        // Setup textarea listeners for auto-resize
+        setupTextareaListeners();
+        
+    }, 50); // 50ms delay to ensure DOM is ready
+}
 
  function saveCurrentPatient() {
     if (currentPatientIndex >= 0 && currentPatientIndex < csvData.length) {
