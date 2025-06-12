@@ -994,22 +994,29 @@ function saveToLocalStorage() {
             }, 100);
         }
 
-        function saveCurrentPatient() {
-            if (currentPatientIndex >= 0 && currentPatientIndex < csvData.length) {
-                csvData[currentPatientIndex] = {
-                    NAME: document.getElementById('detailName').value,
-                    RM: document.getElementById('detailRM').value,
-                    MRN: document.getElementById('detailMRN').value,
-                    ATT: document.getElementById('detailATT').value,
-                    PROBLEMS: document.getElementById('detailProblems').value,
-                    ICS: document.getElementById('detailICS').value,
-                    VIOLIN: document.getElementById('violinSection').value,
-                    ORDERS: document.getElementById('ordersSection').value,
-                    Todo: document.getElementById('detailTodo').value,
-                    PRORITY: document.getElementById('detailPriority').value
-                };
-            }
+ function saveCurrentPatient() {
+    if (currentPatientIndex >= 0 && currentPatientIndex < csvData.length) {
+        // Only save if we have at least name or MRN (to prevent saving blank data)
+        const name = document.getElementById('detailName').value;
+        const mrn = document.getElementById('detailMRN').value;
+        
+        if (name || mrn) {
+            csvData[currentPatientIndex] = {
+                NAME: name,
+                RM: document.getElementById('detailRM').value,
+                MRN: mrn,
+                ATT: document.getElementById('detailATT').value,
+                PROBLEMS: document.getElementById('detailProblems').value,
+                ICS: document.getElementById('detailICS').value,
+                VIOLIN: document.getElementById('violinSection').value,
+                ORDERS: document.getElementById('ordersSection').value,
+                Todo: document.getElementById('detailTodo').value,
+                PRORITY: document.getElementById('detailPriority').value
+            };
+            saveToLocalStorage(); // Also save to localStorage
         }
+    }
+}
 
         function returnToList() {
             saveCurrentPatient();
