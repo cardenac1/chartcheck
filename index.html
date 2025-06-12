@@ -959,115 +959,86 @@ function saveToLocalStorage() {
             console.log('First patient:', csvData[0]);
         }
 
-       function openDetails(index) {
-    // Add error checking
+
+
+function openDetails(index) {
+    console.log('=== OPENING DETAILS DEBUG ===');
+    console.log('Index:', index);
+    console.log('Patient data:', csvData[index]);
+    
     if (!csvData[index]) {
-        console.error('No patient data at index:', index);
-        alert('Error: Patient data not found');
+        alert('No patient at index ' + index);
         return;
     }
     
     currentPatientIndex = index;
     const patient = csvData[index];
     
-    console.log('Opening patient:', patient); // Debug log
+    // Log all patient properties
+    console.log('Patient properties:');
+    for (let key in patient) {
+        console.log(`  ${key}: "${patient[key]}"`);
+    }
     
-    // First, make sure the details page is visible
-    document.getElementById('detailsPage').style.display = 'block';
+    // Show details page
     document.getElementById('patientList').classList.add('hidden');
+    document.getElementById('detailsPage').style.display = 'block';
     document.querySelector('.upload-section').style.display = 'none';
     
-    // Add a small delay to ensure DOM is ready
-    setTimeout(() => {
-        // Check if elements exist before trying to set values
-        const nameField = document.getElementById('detailName');
-        if (nameField) {
-            nameField.value = patient.NAME || '';
+    // Try setting each field with logging
+    const fields = [
+        { id: 'detailName', key: 'NAME' },
+        { id: 'detailRM', key: 'RM' },
+        { id: 'detailMRN', key: 'MRN' },
+        { id: 'detailATT', key: 'ATT' },
+        { id: 'detailProblems', key: 'PROBLEMS' },
+        { id: 'detailICS', key: 'ICS' },
+        { id: 'violinSection', key: 'VIOLIN' },
+        { id: 'ordersSection', key: 'ORDERS' },
+        { id: 'detailTodo', key: 'Todo' },
+        { id: 'detailPriority', key: 'PRORITY' }
+    ];
+    
+    fields.forEach(field => {
+        const element = document.getElementById(field.id);
+        if (element) {
+            const value = patient[field.key] || '';
+            element.value = value;
+            console.log(`Set ${field.id} (${field.key}) to: "${value}"`);
         } else {
-            console.error('detailName field not found!');
+            console.error(`Element not found: ${field.id}`);
         }
-        
-        const rmField = document.getElementById('detailRM');
-        if (rmField) {
-            rmField.value = patient.RM || '';
-        }
-        
-        const mrnField = document.getElementById('detailMRN');
-        if (mrnField) {
-            mrnField.value = patient.MRN || '';
-        }
-        
-        const attField = document.getElementById('detailATT');
-        if (attField) {
-            attField.value = patient.ATT || '';
-        }
-        
-        const problemsField = document.getElementById('detailProblems');
-        if (problemsField) {
-            problemsField.value = patient.PROBLEMS || '';
-        }
-        
-        const icsField = document.getElementById('detailICS');
-        if (icsField) {
-            icsField.value = patient.ICS || '';
-        }
-        
-        const violinField = document.getElementById('violinSection');
-        if (violinField) {
-            violinField.value = patient.VIOLIN || '';
-        }
-        
-        const ordersField = document.getElementById('ordersSection');
-        if (ordersField) {
-            ordersField.value = patient.ORDERS || '';
-        }
-        
-        const todoField = document.getElementById('detailTodo');
-        if (todoField) {
-            todoField.value = patient.Todo || '';
-        }
-        
-        const priorityField = document.getElementById('detailPriority');
-        if (priorityField) {
-            priorityField.value = patient.PRORITY || '';
-        }
-        
-        // Clear warnings initially
-        const warningDiv = document.getElementById('warningMessages');
-        if (warningDiv) {
-            warningDiv.innerHTML = '';
-            warningDiv.classList.add('hidden');
-        }
-        
-        // Setup textarea listeners for auto-resize
+    });
+    
+    // Clear warnings
+    document.getElementById('warningMessages').innerHTML = '';
+    document.getElementById('warningMessages').classList.add('hidden');
+    
+    // Setup textarea listeners
+    setTimeout(() => {
         setupTextareaListeners();
-        
-    }, 50); // 50ms delay to ensure DOM is ready
+    }, 100);
 }
 
- function saveCurrentPatient() {
-    if (currentPatientIndex >= 0 && currentPatientIndex < csvData.length) {
-        // Only save if we have at least name or MRN (to prevent saving blank data)
-        const name = document.getElementById('detailName').value;
-        const mrn = document.getElementById('detailMRN').value;
-        
-        if (name || mrn) {
-            csvData[currentPatientIndex] = {
-                NAME: name,
-                RM: document.getElementById('detailRM').value,
-                MRN: mrn,
-                ATT: document.getElementById('detailATT').value,
-                PROBLEMS: document.getElementById('detailProblems').value,
-                ICS: document.getElementById('detailICS').value,
-                VIOLIN: document.getElementById('violinSection').value,
-                ORDERS: document.getElementById('ordersSection').value,
-                Todo: document.getElementById('detailTodo').value,
-                PRORITY: document.getElementById('detailPriority').value
-            };
-            saveToLocalStorage(); // Also save to localStorage
+
+
+
+        function saveCurrentPatient() {
+            if (currentPatientIndex >= 0 && currentPatientIndex < csvData.length) {
+                csvData[currentPatientIndex] = {
+                    NAME: document.getElementById('detailName').value,
+                    RM: document.getElementById('detailRM').value,
+                    MRN: document.getElementById('detailMRN').value,
+                    ATT: document.getElementById('detailATT').value,
+                    PROBLEMS: document.getElementById('detailProblems').value,
+                    ICS: document.getElementById('detailICS').value,
+                    VIOLIN: document.getElementById('violinSection').value,
+                    ORDERS: document.getElementById('ordersSection').value,
+                    Todo: document.getElementById('detailTodo').value,
+                    PRORITY: document.getElementById('detailPriority').value
+                };
+            }
         }
-    }
-}
 
         function returnToList() {
             saveCurrentPatient();
