@@ -12259,6 +12259,7 @@ function createEmptyState(message) {
 
 
 
+
 function autoPopulatePlan(skipConfirmation = false) {
     if (currentPatientIndex === -1 || !patientData[currentPatientIndex]) {
         if (!skipConfirmation) alert('No patient selected');
@@ -12272,6 +12273,19 @@ function autoPopulatePlan(skipConfirmation = false) {
         if (!skipConfirmation) alert('No VIOLIN data available. Please import data first.');
         return;
     }
+    
+    const planField = document.getElementById('field_Plan');
+    if (!planField) return;
+    
+    const existingPlan = planField.value;
+    
+    // If there's existing content, only update vitals and labs
+    if (existingPlan && existingPlan.trim().length > 0) {
+        updateVitalsAndLabsOnly(existingPlan);
+        return;
+    }
+    
+    // Otherwise, do the full population (original code below)
     
     // Helper to format values with blanks
     const fmt = (value) => value || '';
@@ -12714,21 +12728,414 @@ ${endoLine}
 ${otherLine}`;
     
     // Populate the Plan field
-    const planField = document.getElementById('field_Plan');
-    if (planField) {
-        if (!skipConfirmation && planField.value && planField.value.trim().length > 0) {
-            if (!confirm('Plan field already has content. Overwrite?')) {
-                return;
+    if (!skipConfirmation && planField.value && planField.value.trim().length > 0) {
+        if (!confirm('Plan field already has content. Overwrite?')) {
+            return;
+        }
+    }
+    
+    planField.value = planTemplate;
+    patient['Plan'] = planTemplate;
+    autoResizeTextarea(planField);
+    saveToLocalStorage();
+    
+    if (!skipConfirmation) {
+        alert('Plan template populated with data from VIOLIN and medications!');
+    }
+    
+    // Helper function to update only vitals and labs
+    function updateVitalsAndLabsOnly(existingPlan) {
+        const lines = existingPlan.split('\n');
+        const updatedLines = [];
+        
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+            
+            // NEURO - skip, don't update
+            if (line.startsWith('NEURO:')) {
+                updatedLines.push(line);
+            }
+            
+            // PULM - update O2, Sats, ABG only
+            else if (line.startsWith('PULM:')) {
+                const afterAsterisk = line.match(/\*.*$/);
+                let newLine = 'PULM: ';
+                
+                // Get O2 therapy
+                if (labData?.o2therapyCode) {
+                    newLine += labData.o2therapyCode;
+                    if (labData.o2flowRaw && labData.o2therapyCode !== 'Vent' && labData.o2therapyCode !== 'RA') {
+                        newLine += ` @${labData.o2flowRaw}`;
+                    }
+                    if (labData.o2therapyCode === 'Vent') {
+                        const settings = [];
+                        if (labData.ventModeRaw) settings.push(labData.ventModeRaw.replace(/[\s\/\+]+/g, ''));
+                        if (labData.ventFrequencyRaw) settings.push(`RR:${labData.ventFrequencyRaw}`);
+                        if (labData.ventTidalRaw) settings.push(`Vt:${labData.ventTidalRaw}`);
+                        if (labData.ventPeepRaw) settings.push(`PEEP:${labData.ventPeepRaw}`);
+                        if (labData.ventFiO2Raw) settings.push(`FiO2:${labData.ventFiO2Raw}%`);
+                        if (settings.length > 0) {
+                            newLine += ` (${settings.join(', ')})`;
+                        }
+                    }
+                } else {
+                    newLine += '   ';
+                }
+                
+                // Get O2 sat
+                if (labData?.vitals?.o2 && labData.vitals.o2.length > 0) {
+                    const o2Min = Math.min(...labData.vitals.o2);
+                    const o2Max = Math.max(...labData.vitals.o2);
+                    newLine += `, Sats: ${o2Min}-${o2Max}%`;
+                } else {
+                    newLine += ', Sats:   ';
+                }
+                
+                // Get ABG
+                if (labData?.labs?.ph || labData?.labs?.pco2 || labData?.labs?.po2) {
+                    const ph = labData.labs.ph?.[0] || '';
+                    const pco2 = labData.labs.pco2?.[0] || '';
+                    const po2 = labData.labs.po2?.[0] || '';
+                    const bicarb = labData.labs.bicarb?.[0] || '';
+                    newLine += `, ABG: ${ph}/${pco2}/${po2}/${bicarb}`;
+                } else {
+                    newLine += ', ABG:   ';
+                }
+                
+                // Preserve medications
+                if (afterAsterisk) {
+                    newLine += '   ' + afterAsterisk[0];
+                }
+                
+                updatedLines.push(newLine);
+            }
+            
+            // CV - update HR, BP, MAP only
+            else if (line.startsWith('CV:')) {
+                const afterAsterisk = line.match(/\*.*$/);
+                let newLine = 'CV: ';
+                
+                // Get HR
+                if (labData?.vitals?.hr && labData.vitals.hr.length > 0) {
+                    const hrMin = Math.min(...labData.vitals.hr);
+                    const hrMax = Math.max(...labData.vitals.hr);
+                    const hrAvg = Math.round(labData.vitals.hr.reduce((a, b) => a + b, 0) / labData.vitals.hr.length);
+                    newLine += `HR: ${hrAvg} (${hrMin}-${hrMax})`;
+                } else {
+                    newLine += 'HR:   ';
+                }
+                
+                // Get BP
+                if (labData?.vitals?.sbp && labData.vitals.sbp.length > 0) {
+                    const sbpMin = Math.min(...labData.vitals.sbp);
+                    const sbpMax = Math.max(...labData.vitals.sbp);
+                    const sbpAvg = Math.round(labData.vitals.sbp.reduce((a, b) => a + b, 0) / labData.vitals.sbp.length);
+                    const dbpMin = Math.min(...labData.vitals.dbp);
+                    const dbpMax = Math.max(...labData.vitals.dbp);
+                    const dbpAvg = Math.round(labData.vitals.dbp.reduce((a, b) => a + b, 0) / labData.vitals.dbp.length);
+                    newLine += `, BP: ${sbpAvg}/${dbpAvg} (${sbpMin}-${sbpMax}/${dbpMin}-${dbpMax})`;
+                } else {
+                    newLine += ', BP:   ';
+                }
+                
+                // Get MAP
+                if (labData?.vitals?.map && labData.vitals.map.length > 0) {
+                    const mapMin = Math.min(...labData.vitals.map);
+                    const mapMax = Math.max(...labData.vitals.map);
+                    const mapAvg = Math.round(labData.vitals.map.reduce((a, b) => a + b, 0) / labData.vitals.map.length);
+                    newLine += `, MAP: ${mapAvg} (${mapMin}-${mapMax})`;
+                } else {
+                    newLine += ', MAP:   ';
+                }
+                
+                // Preserve medications
+                if (afterAsterisk) {
+                    newLine += '   ' + afterAsterisk[0];
+                }
+                
+                updatedLines.push(newLine);
+            }
+            
+            // GI - update LFTs only
+            else if (line.startsWith('GI:')) {
+                const parts = line.split(/,\s*(?=\*)/);
+                const beforeMeds = parts[0];
+                const afterMeds = parts.slice(1).join(', ');
+                
+                let newLine = 'GI: ';
+                
+                // Get LFTs
+                if (labData?.labs?.ast || labData?.labs?.alt) {
+                    const ast = labData.labs.ast?.[0] || '';
+                    const alt = labData.labs.alt?.[0] || '';
+                    const tbil = labData.labs.tbil?.[0] || '';
+                    const alk = labData.labs.alk?.[0] || '';
+                    newLine += `AST/ALT: ${ast}/${alt}, TBil: ${tbil}, Alk: ${alk}`;
+                } else {
+                    newLine += 'LFTs:   ';
+                }
+                
+                // Preserve everything else
+                const nutritionMatch = beforeMeds.match(/(,\s*\*?[^,]*Nutrition[^,*]*\*?)/i);
+                const tubesMatch = beforeMeds.match(/(,\s*Tubes\/drains[^,*]*)/i);
+                
+                if (nutritionMatch) newLine += nutritionMatch[0];
+                else newLine += ', Nutrition:   ';
+                
+                if (tubesMatch) newLine += tubesMatch[0];
+                else newLine += ', Tubes/drains:   ';
+                
+                if (afterMeds) {
+                    newLine += ', ' + afterMeds;
+                }
+                
+                updatedLines.push(newLine);
+            }
+            
+            // RENAL - update BMP and I/O (4 lines)
+            else if (line.startsWith('RENAL:')) {
+                const fmt = (value) => value || '';
+                const fmtWithPrev = (current, previous, unit = '') => {
+                    if (!current && !previous) return '';
+                    if (!previous) return current + unit;
+                    return `${current}${unit} (${previous}${unit})`;
+                };
+                const padRight = (str, len) => {
+                    const s = String(str || '  ');
+                    return s + ' '.repeat(Math.max(0, len - s.length));
+                };
+                const markAbnormal = (value) => `*${value}*`;
+                
+                // Get BMP values
+                const na = labData?.labs?.na?.[0];
+                const naPrev = labData?.labs?.na?.[1];
+                const k = labData?.labs?.k?.[0];
+                const kPrev = labData?.labs?.k?.[1];
+                const cl = labData?.labs?.cl?.[0];
+                const clPrev = labData?.labs?.cl?.[1];
+                const co2 = labData?.labs?.co2?.[0];
+                const co2Prev = labData?.labs?.co2?.[1];
+                const bun = labData?.labs?.bun?.[0];
+                const bunPrev = labData?.labs?.bun?.[1];
+                const cr = labData?.labs?.cr?.[0];
+                const crPrev = labData?.labs?.cr?.[1];
+                const glu = labData?.labs?.glu?.[0];
+                const gluPrev = labData?.labs?.glu?.[1];
+                const ca = labData?.labs?.ca?.[0];
+                const caPrev = labData?.labs?.ca?.[1];
+                const mg = labData?.labs?.mg?.[0];
+                const mgPrev = labData?.labs?.mg?.[1];
+                const phos = labData?.labs?.phos?.[0];
+                const phosPrev = labData?.labs?.phos?.[1];
+                
+                const naAbnormal = na && (na < 135 || na > 145);
+                const kAbnormal = k && (k < 4.0 || k > 5.0);
+                const clAbnormal = cl && (cl < 96 || cl > 106);
+                const bunAbnormal = bun && bun > 24;
+                const crAbnormal = cr && (cr > 1.2 || (crPrev && cr - crPrev > 0.3));
+                const gluAbnormal = glu && (glu > 200 || glu < 70);
+                const caAbnormal = ca && (ca < 8.5 || ca > 10.2);
+                const mgAbnormal = mg && (mg < 1.7 || mg > 2.2);
+                const phosAbnormal = phos && (phos < 2.5 || phos > 4.5);
+                
+                const naStr = naAbnormal ? markAbnormal(fmtWithPrev(na, naPrev)) : fmt(na);
+                const kStr = kAbnormal ? markAbnormal(fmtWithPrev(k, kPrev)) : fmt(k);
+                const clStr = clAbnormal ? markAbnormal(fmtWithPrev(cl, clPrev)) : fmt(cl);
+                const co2Str = fmt(co2);
+                const bunStr = bunAbnormal ? markAbnormal(fmtWithPrev(bun, bunPrev)) : fmt(bun);
+                const crStr = crAbnormal ? markAbnormal(fmtWithPrev(cr, crPrev)) : fmt(cr);
+                const gluStr = gluAbnormal ? markAbnormal(fmtWithPrev(glu, gluPrev)) : fmt(glu);
+                const caStr = caAbnormal ? markAbnormal(fmtWithPrev(ca, caPrev)) : fmt(ca);
+                const mgStr = mgAbnormal ? markAbnormal(fmtWithPrev(mg, mgPrev)) : fmt(mg);
+                const phosStr = phosAbnormal ? markAbnormal(fmtWithPrev(phos, phosPrev)) : fmt(phos);
+                
+                const naPad = padRight(naStr, 8);
+                const kPad = padRight(kStr, 8);
+                const clPad = padRight(clStr, 8);
+                const co2Pad = padRight(co2Str, 8);
+                const bunPad = padRight(bunStr, 8);
+                const crPad = padRight(crStr, 8);
+                
+                updatedLines.push('RENAL:');
+                updatedLines.push(`${naPad}|${clPad}|${bunPad}/${gluStr}`);
+                updatedLines.push(`${kPad}|${co2Pad}|${crPad}\\`);
+                updatedLines.push(`Ca: ${caStr}, Mg: ${mgStr}, Phos: ${phosStr}`);
+                
+                // Get I/O line (preserve meds)
+                i += 3; // Skip the next 3 lines (BMP structure)
+                const ioLineOld = lines[i + 1] || '';
+                const ioMeds = ioLineOld.match(/\*.*$/);
+                
+                let ioLineNew = '';
+                if (lastImportedData) {
+                    const ioData = extractIntakeOutputData(lastImportedData);
+                    const elapsedHours = ioData.elapsedHours || 24;
+                    const intakeSummaryMatch = lastImportedData.match(/Total\s+Summary[\s\S]*?Intake\s+mL\s+([\d,]+(?:\.\d+)?)/i);
+                    const outputSummaryMatch = lastImportedData.match(/Total\s+Summary[\s\S]*?Output\s+mL\s+([\d,]+(?:\.\d+)?)/i);
+                    const totalIntake = intakeSummaryMatch ? parseFloat(intakeSummaryMatch[1].replace(/,/g, '')) : 0;
+                    const totalOutput = outputSummaryMatch ? parseFloat(outputSummaryMatch[1].replace(/,/g, '')) : 0;
+                    const balance = totalIntake - totalOutput;
+                    
+                    ioLineNew += `I: ${Math.round(totalIntake)} / O: ${Math.round(totalOutput)} / Bal: ${balance >= 0 ? '+' : ''}${Math.round(balance)}mL`;
+                    
+                    if (ioData.outputs.urine.length > 0) {
+                        const totalUrine = ioData.outputs.urine.reduce((sum, entry) => sum + entry.volume, 0);
+                        const hourlyOutput = Math.round(totalUrine / elapsedHours);
+                        let uopStr = `, UOP: ${Math.round(totalUrine)}mL (${hourlyOutput}/hr`;
+                        if (labData?.weight) {
+                            const urinePerKgHr = (hourlyOutput / labData.weight).toFixed(2);
+                            uopStr += `, ${urinePerKgHr} cc/kg/hr`;
+                        }
+                        if (ioData.outputs.urinaryCatheter) {
+                            uopStr += ', Foley';
+                        }
+                        uopStr += ')';
+                        ioLineNew += uopStr;
+                    } else {
+                        ioLineNew += ', UOP:   ';
+                    }
+                } else {
+                    ioLineNew += 'I/O:   ';
+                }
+                
+                if (ioMeds) {
+                    ioLineNew += '   ' + ioMeds[0];
+                }
+                
+                updatedLines.push(ioLineNew);
+            }
+            
+            // HEME - update labs only
+            else if (line.startsWith('HEME:')) {
+                const afterDVT = line.match(/(,\s*\*?DVT ppx[^*]*\*?[^*]*\*?.*$)/i);
+                
+                const wbc = labData?.labs?.wbc?.[0];
+                const wbcPrev = labData?.labs?.wbc?.[1];
+                const hgb = labData?.labs?.hgb?.[0];
+                const hgbPrev = labData?.labs?.hgb?.[1];
+                const hct = labData?.labs?.hct?.[0];
+                const hctPrev = labData?.labs?.hct?.[1];
+                const plt = labData?.labs?.plt?.[0];
+                const pltPrev = labData?.labs?.plt?.[1];
+                
+                const fmt = (value) => value || '';
+                const fmtWithPrev = (current, previous, unit = '') => {
+                    if (!current && !previous) return '';
+                    if (!previous) return current + unit;
+                    return `${current}${unit} (${previous}${unit})`;
+                };
+                const markAbnormal = (value) => `*${value}*`;
+                
+                const wbcAbnormal = wbc && (wbc < 4.5 || wbc > 11);
+                const hgbAbnormal = hgb && (hgb < 8 || (hgbPrev && hgbPrev - hgb >= 1));
+                const hctAbnormal = hct && (hct < 24 || (hctPrev && hctPrev - hct >= 1));
+                const pltAbnormal = plt && (plt < 150 || (pltPrev && pltPrev - plt >= 50));
+                
+                const wbcStrHeme = wbcAbnormal ? markAbnormal(fmtWithPrev(wbc, wbcPrev)) : fmt(wbc);
+                const hgbStrHeme = hgbAbnormal ? markAbnormal(fmtWithPrev(hgb, hgbPrev)) : fmt(hgb);
+                const hctStrHeme = hctAbnormal ? markAbnormal(fmtWithPrev(hct, hctPrev)) : fmt(hct);
+                const pltStrHeme = pltAbnormal ? markAbnormal(fmtWithPrev(plt, pltPrev)) : fmt(plt);
+                
+                let newLine = `HEME: Hgb: ${hgbStrHeme}, Hct: ${hctStrHeme}, PLT: ${pltStrHeme}`;
+                
+                if (labData?.labs?.pt || labData?.labs?.ptt || labData?.labs?.inr) {
+                    const pt = labData.labs.pt?.[0] || '';
+                    const ptt = labData.labs.ptt?.[0] || '';
+                    const inr = labData.labs.inr?.[0] || '';
+                    const fib = labData.labs.fib?.[0] || '';
+                    newLine += `, PT: ${pt}, PTT: ${ptt}, INR: ${inr}, Fib: ${fib}`;
+                } else {
+                    newLine += ', Coags:   ';
+                }
+                
+                if (afterDVT) {
+                    newLine += afterDVT[0];
+                }
+                
+                updatedLines.push(newLine);
+            }
+            
+            // ID - update WBC and temp only
+            else if (line.startsWith('ID:')) {
+                const afterCultures = line.match(/(,\s*Cultures[^,]*)/i);
+                const afterAbx = line.match(/(,\s*\*?Abx[^*]*\*?.*$)/i);
+                
+                const wbc = labData?.labs?.wbc?.[0];
+                const wbcPrev = labData?.labs?.wbc?.[1];
+                const fmt = (value) => value || '';
+                const fmtWithPrev = (current, previous, unit = '') => {
+                    if (!current && !previous) return '';
+                    if (!previous) return current + unit;
+                    return `${current}${unit} (${previous}${unit})`;
+                };
+                const markAbnormal = (value) => `*${value}*`;
+                const wbcAbnormal = wbc && (wbc < 4.5 || wbc > 11);
+                const wbcStrHeme = wbcAbnormal ? markAbnormal(fmtWithPrev(wbc, wbcPrev)) : fmt(wbc);
+                
+                let newLine = `ID: WBC: ${wbcStrHeme}`;
+                
+                if (afterCultures) {
+                    newLine += afterCultures[0];
+                } else {
+                    newLine += ', Cultures:   ';
+                }
+                
+                if (labData?.vitals?.temp && labData.vitals.temp.length > 0) {
+                    const tempMin = Math.min(...labData.vitals.temp).toFixed(1);
+                    const tempMax = Math.max(...labData.vitals.temp).toFixed(1);
+                    const tempAvg = (labData.vitals.temp.reduce((a, b) => a + b, 0) / labData.vitals.temp.length).toFixed(1);
+                    newLine += `, Tmax: ${tempMax}°C / Tcurr: ${tempAvg}°C (${tempMin}-${tempMax})`;
+                } else {
+                    newLine += ', Tmax:   / Tcurr:   ';
+                }
+                
+                if (afterAbx) {
+                    newLine += afterAbx[0];
+                }
+                
+                updatedLines.push(newLine);
+            }
+            
+            // ENDO - update glucose only
+            else if (line.startsWith('ENDO:')) {
+                const afterGlucose = line.match(/(,\s*\*?Insulin[^*]*\*?.*$)/i);
+                
+                let newLine = 'ENDO: ';
+                
+                if (labData?.glucoseStats) {
+                    newLine += `Glucose avg: ${labData.glucoseStats.avg} (${labData.glucoseStats.min}-${labData.glucoseStats.max})`;
+                } else if (labData?.labs?.glu?.[0]) {
+                    newLine += `Glucose: ${labData.labs.glu[0]}`;
+                } else {
+                    newLine += 'Glucose:   ';
+                }
+                
+                if (afterGlucose) {
+                    newLine += afterGlucose[0];
+                }
+                
+                updatedLines.push(newLine);
+            }
+            
+            // Other - keep as is
+            else if (line.startsWith('Other:')) {
+                updatedLines.push(line);
+            }
+            
+            // Any other line - keep as is
+            else {
+                updatedLines.push(line);
             }
         }
         
-        planField.value = planTemplate;
-        patient['Plan'] = planTemplate;
+        const updatedPlan = updatedLines.join('\n');
+        planField.value = updatedPlan;
+        patient['Plan'] = updatedPlan;
         autoResizeTextarea(planField);
         saveToLocalStorage();
         
         if (!skipConfirmation) {
-            alert('Plan template populated with data from VIOLIN and medications!');
+            alert('Vitals and labs updated!');
         }
     }
 }
