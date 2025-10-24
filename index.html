@@ -2405,29 +2405,38 @@ async function testOCRAvailability() {
 
 
       const MASTER_HEADERS = [
-    'Type',      
-    'Name',      
-    'RM',        
-    'MRN',       
-    'Att',       
-    'A/G',       
-    'CC',        
-    'Problems',  
-    'HPI',       
-    'ROS',       
-    'PMH',       
-    'Meds',      
-    'All',       
-    'Surg hx',   
-    'FSH',       
-    'VIOLIN',    
-    'PE',        
-    'ORDERS',    
-    'Plan',      // MOVED HERE - right before To do
-    'To do',     
+    'Type',
+    'Name',
+    'RM',
+    'MRN',
+    'Att',
+    'A/G',
+    'CC',
+    'Problems',
+    'HPI',
+    'ROS',
+    'PMH',
+    'Meds',
+    'All',
+    'Surg hx',
+    'FSH',
+    'VIOLIN',
+    'PE',
+    'ORDERS',
+    'Plan',
+    'To do',
     'Priority',
     'ImportedData',
-    'LabData'
+    'LabData',
+    'NEURO',
+    'PULM',
+    'CV',
+    'GI',
+    'RENAL',
+    'HEME',
+    'INFECTION',
+    'ENDO',
+    'SKIN'
 ];
 
         const PATIENT_COLUMNS = [0, 1, 2, 3, 4, 7, 15, 16, 18, 19, 20];
@@ -2453,9 +2462,18 @@ const helpContent = {
     'Meds': '<b>Current Medications</b><br><br>• Home medications<br>• Current hospital medications<br>• Allergies',
     'All': '<b>Allergies</b><br><br>• Drug allergies<br>• Environmental allergies<br>• Type of reaction',
 	'PE': '<strong>Clinical Examination:</strong></div><ul><li><strong>Gen: Well appearing in no acute distress. Alert and oriented x3.</strong></li><li><strong>Neuro: strength and sensation intact BUE+BLE, CN II-XII grossly intact, EOMI</strong></li><li><strong>Resp: Non-labored breathing. No use of accessory muscles, no retractions.</strong></li><li><strong>CV: Hemodynamically stable</strong></li><li><strong>Pulse: palpable b/l DP/PT pulses, radial/ulnar pulses</strong></li><li><strong>Abd: soft, non tender, non distended, no voluntary or involuntary guarding, no rebound or jolt tenderness</strong></li><li><strong>Wound: Incisions clean, dry, intact.</strong></li><li><strong>LTD:</strong></li></ul><div><strong>Trauma Examination:</strong></div><ul><li><strong>Head: Normocephalic, atraumatic, no deformities, abrasions, tenderness, oropharynx clear, no blood in nares or ears, hearing intact</strong></li><li><strong>Neuro: GCS 15, Pupils equal and reactive to light bilaterally, extraocular muscles intact. gross motor and sensory intact in all 4 extremities.</strong></li><li><strong>Face: Atraumatic, no deformities, abrasions, tenderness</strong></li><li><strong>Chest: clear to auscultation bilaterally, non-tender, atraumatic, Pulling _ On incentive spirometer</strong></li><li><strong>CVS: RRR, hemodynamically stable</strong></li><li><strong>Abdomen: soft, non-tender, non-distended, no voluntary or involuntary guarding, no jolt or rebound tenderness</strong></li><li><strong>Pelvis: Stable</strong></li><li><strong>Upper Extremities: Atraumatic, no deformities, abrasions, tenderness, Bilateral radial pulses palpable, brisk capillary refill</strong></li><li><strong>Lower Extremities: Atraumatic, no deformities, abrasions, tenderness, brisk capillary refill, Bilateral femoral, DP, PT pulses palpable.</strong></li><li><strong>Spine: No obvious cervical, lumbar, or thoracic spine deformities, no step offs, no tenderness, trachea midline</strong></li><li><strong>Perineum: No gross blood in the perineum, rectal exam deferred, anal wink reflex intact</strong></li>',
-'To do': 'INTERACTIVE_CHECKLIST', 
-'Plan': '<h3>Nutrition/Fluids</h3><ul><li><strong>NPO considerations</strong><ul><li><strong>if NPO may need fluids</strong></li><li><strong>Speech and swallow consult for concern for dysphagia or older patients with cervical spine injury</strong></li></ul></li><li><strong>TPN/PPN</strong><ul><li><strong>Used when there are contraindications to EN</strong></li><li><strong>Critically Ill: Within 36 to 48 hours</strong></li><li><strong>Noncritically ill postoperative patients: After at least five days, usually at 14 days</strong></li><li><strong>Chronic malnutrition and anticipated prolonged bowel rest: Can be earlier than five to seven days</strong></li><li><strong>Daily order needs to be cosigned</strong></li><li><strong>Ensure fat emulsion is ordered</strong></li><li><strong>Need central access for TPN</strong></li><li><strong>Note rate</strong></li></ul></li><li><strong>TF</strong><ul><li><strong>Indications</strong></li><li><strong>Severe dysphagia (may need postpyloric access to reduce aspiration risk)</strong></li><li><strong>Persisted for at least two weeks and expected to persist for at least four weeks</strong></li><li><strong>Requirement of mechanical ventilation for 4 weeks or more (NG tube 4 weeks or more)</strong></li><li><strong>Note feeding rate versus goal rate</strong></li><li><strong>If via cortrack consider PEG</strong></li></ul></li><li><strong>Maintenance fluid rate: <a href="https://www.mdcalc.com/calc/72/maintenance-fluids-calculations" target="_blank">https://www.mdcalc.com/calc/72/maintenance-fluids-calculations</a></strong></li></ul><h3>Pain Management</h3><ul><li><strong>Convert all IV pain meds to oral when possible</strong></li><li><strong>Check MAR for frequency of requests for pain meds</strong></li><li><strong>Order standing non opioid pain meds for all patients on PRN opioids.</strong></li></ul><h3>LTD</h3><ul><li><strong>Make plan to remove drains/tubes.</strong></li><li><strong>Tracheostomy indicated for prolonged mechanical ventilation (&gt;10 days) unlikely to wean (max duration 3 weeks on ETT)</strong></li></ul><h3>Antibiotics/Special Meds</h3><ul><li><strong>Order Vancomycin/medication trough levels</strong></li><li><strong>Find out end date of antibiotics, wean off pressors and sedation. Otherwise set up long term antibiotic IV access if needed</strong></li><li><strong>Ensure all home meds are restarted if appropriate</strong></li></ul><h3>Anticoagulation</h3><ul><li><strong>Check/start dvt prophylaxis or home AC ex. aspirin/plavix when appropriate</strong></li><li><strong>.dvt_url for trauma patients</strong></li></ul><h3>Discharge</h3><ul><li><strong>PT/OT consult for all elderly debilitated patients postoperatively</strong></li><li><strong>Text SW/IDT daily with update for all primary patients</strong></li><li><strong>Special orders</strong><ul><li><strong>VNS: help with dressing changes, wound vacs, home medication review, vital signs monitoring</strong></li><li><strong>Home wound vac services</strong></li><li><strong>Home PT/OT</strong></li><li><strong>Home infusion services</strong></li><li><strong>Transportation/Medical</strong></li></ul></li></ul><h3>Adjuncts</h3><ul><li><strong>Urine retention-&gt; Foley, bladder scan, flomax</strong></li><li><strong>Constipation-&gt; senna, colace, miralax, suppository, enema</strong></li><li><strong>Nausea/vomiting-&gt; zofran, reglan, compazine, NGT</strong></li><li><strong>CXRs/KUBs</strong></li></ul>', 
-	
+'To do': 'INTERACTIVE_CHECKLIST',
+'Plan': '<h3>Nutrition/Fluids</h3><ul><li><strong>NPO considerations</strong><ul><li><strong>if NPO may need fluids</strong></li><li><strong>Speech and swallow consult for concern for dysphagia or older patients with cervical spine injury</strong></li></ul></li><li><strong>TPN/PPN</strong><ul><li><strong>Used when there are contraindications to EN</strong></li><li><strong>Critically Ill: Within 36 to 48 hours</strong></li><li><strong>Noncritically ill postoperative patients: After at least five days, usually at 14 days</strong></li><li><strong>Chronic malnutrition and anticipated prolonged bowel rest: Can be earlier than five to seven days</strong></li><li><strong>Daily order needs to be cosigned</strong></li><li><strong>Ensure fat emulsion is ordered</strong></li><li><strong>Need central access for TPN</strong></li><li><strong>Note rate</strong></li></ul></li><li><strong>TF</strong><ul><li><strong>Indications</strong></li><li><strong>Severe dysphagia (may need postpyloric access to reduce aspiration risk)</strong></li><li><strong>Persisted for at least two weeks and expected to persist for at least four weeks</strong></li><li><strong>Requirement of mechanical ventilation for 4 weeks or more (NG tube 4 weeks or more)</strong></li><li><strong>Note feeding rate versus goal rate</strong></li><li><strong>If via cortrack consider PEG</strong></li></ul></li><li><strong>Maintenance fluid rate: <a href="https://www.mdcalc.com/calc/72/maintenance-fluids-calculations" target="_blank">https://www.mdcalc.com/calc/72/maintenance-fluids-calculations</a></strong></li></ul><h3>Pain Management</h3><ul><li><strong>Convert all IV pain meds to oral when possible</strong></li><li><strong>Check MAR for frequency of requests for pain meds</strong></li><li><strong>Order standing non opioid pain meds for all patients on PRN opioids.</strong></li></ul><h3>LTD</h3><ul><li><strong>Make plan to remove drains/tubes.</strong></li><li><strong>Tracheostomy indicated for prolonged mechanical ventilation (&gt;10 days) unlikely to wean (max duration 3 weeks on ETT)</strong></li></ul><h3>Antibiotics/Special Meds</h3><ul><li><strong>Order Vancomycin/medication trough levels</strong></li><li><strong>Find out end date of antibiotics, wean off pressors and sedation. Otherwise set up long term antibiotic IV access if needed</strong></li><li><strong>Ensure all home meds are restarted if appropriate</strong></li></ul><h3>Anticoagulation</h3><ul><li><strong>Check/start dvt prophylaxis or home AC ex. aspirin/plavix when appropriate</strong></li><li><strong>.dvt_url for trauma patients</strong></li></ul><h3>Discharge</h3><ul><li><strong>PT/OT consult for all elderly debilitated patients postoperatively</strong></li><li><strong>Text SW/IDT daily with update for all primary patients</strong></li><li><strong>Special orders</strong><ul><li><strong>VNS: help with dressing changes, wound vacs, home medication review, vital signs monitoring</strong></li><li><strong>Home wound vac services</strong></li><li><strong>Home PT/OT</strong></li><li><strong>Home infusion services</strong></li><li><strong>Transportation/Medical</strong></li></ul></li></ul><h3>Adjuncts</h3><ul><li><strong>Urine retention-&gt; Foley, bladder scan, flomax</strong></li><li><strong>Constipation-&gt; senna, colace, miralax, suppository, enema</strong></li><li><strong>Nausea/vomiting-&gt; zofran, reglan, compazine, NGT</strong></li><li><strong>CXRs/KUBs</strong></li></ul>',
+'NEURO': '<h3>NEURO</h3><ul><li><strong>Dx</strong></li><li><strong>Exam:</strong> GCS 15 (E4V5M6), PERRLA, strength and sensation intact BUE+BLE, CN II-XII grossly intact, EOMI, minimal pain</li><li><strong>Meds:</strong> wean off sedation, convert pain meds to PO and home regimen, sedation holiday</li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'PULM': '<h3>PULM</h3><ul><li><strong>Dx</strong></li><li><strong>Exam:</strong> CTAB, regular rate, O2 sat, O2 support/vent settings, RR, ABG, RSBI, spot trial results, Types of trach and size ex. #8 cuffed subglottic tracheostomy, date placed, wean to decannulation, chest tube outputs/air leaks/size/location, SOB, CP</li><li><strong>Meds:</strong> home meds, convert nebs to dc regimen</li><li><strong>Wean off support, optimize vent settings (need daily CXR and ABG esp for chest tubes)</strong></li><li><strong>Tracheostomy indicated for prolonged mechanical ventilation (>10 days) unlikely to wean (max duration 3 weeks on ETT) (book and consent)</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'CV': '<h3>CV</h3><ul><li><strong>Dx</strong></li><li><strong>Exam:</strong> HR, BP, MAP, CVP, PAC values, PT/DP, Radial/Ulnar pulses, BLE edema, VENOUS/ARTERIAL ACCESS gauge/size and location</li><li><strong>WHENEVER POSSIBLE → Remove or replace central lines, PICC, peripheral IVs, arterial line</strong></li><li><strong>Wean off pressors/continuous cardiac drips, convert to PO</strong></li><li><strong>Restart cardiac meds</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'GI': '<h3>GI</h3><ul><li><strong>Dx</strong></li><li><strong>LFTs/GI labs</strong></li><li><strong>Exam:</strong> abdominal exam, incision exam, drains/NGT/OGT quality/quantity of output, BM/Gas quality/quantity, Nausea, vomiting</li><li><strong>Diet/Nutrition</strong><ul><li>Advance as tolerated to regular diet</li></ul></li><li><strong>TPN/PPN</strong><ul><li>Used when there are contraindications to EN</li><li>Critically Ill: Within 36 to 48 hours</li><li>Noncritically ill postoperative patients: After at least five days, usually at 14 days</li><li>Chronic malnutrition and anticipated prolonged bowel rest: Can be earlier than five to seven days</li><li>Daily order needs to be cosigned</li><li>Ensure fat emulsion is ordered</li><li>Need central access for TPN</li><li>Note rate</li></ul></li><li><strong>TF indications</strong><ul><li>Severe dysphagia (may need postpyloric access to reduce aspiration risk)</li><li>Persisted for at least two weeks and expected to persist for at least four weeks</li><li>Requirement of mechanical ventilation for 4 weeks or more (NG tube 4 weeks or more)</li><li>Advance to goal rate</li></ul></li><li><strong>Stress ulcer prophylaxis</strong></li><li><strong>Bowel regimen</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'RENAL': '<h3>RENAL/FLUIDS</h3><ul><li><strong>Dx</strong></li><li><strong>BMP/Ca/Mag/Phos</strong></li><li><strong>Exam:</strong> I/Os, fluid balance, UOP, foley/voids, HD method/rate/target, Dysuria/urine retention</li><li><strong>IVF</strong><ul><li>Maintenance fluid rate: <a href="https://www.mdcalc.com/calc/72/maintenance-fluids-calculations" target="_blank">Calculator</a></li></ul></li><li><strong>Dc foley, BS/SC vs. void</strong></li><li><strong>Wean from HD as able, CVVHD → iHD if chronic</strong></li><li><strong>AKI management</strong></li><li><strong>Replete lytes</strong></li><li><strong>DC IVF</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'HEME': '<h3>HEME</h3><ul><li><strong>Dx</strong></li><li><strong>Coags:</strong> Hgb, Hct, PLT, PT, PTT/INR, Fibrinogen, ROTEM</li><li><strong>Exam:</strong> BLE edema</li><li><strong>Check start DVT prophylaxis or home AC ex. aspirin/plavix when appropriate</strong></li><li><strong>Dc IV anticoagulants and start PO discharge regimen</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'INFECTION': '<h3>INFECTION</h3><ul><li><strong>Dx</strong></li><li><strong>Exam:</strong> WBC, Diff, Cultures with speciation/sensitivities, Tmax, Tcurr</li><li><strong>Abx:</strong> duration, type, route when to dc</li><li><strong>Order Vancomycin/medication trough levels</strong></li><li><strong>DC antibiotics, Otherwise set up long term antibiotic IV access if needed</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'ENDO': '<h3>ENDO</h3><ul><li><strong>Dx</strong></li><li><strong>Ideal Glucose range: 140-180</strong></li><li><strong>Convert ISS or insulin gtt to basal bolus regimen when stable (otherwise those are preferred)</strong></li><li><strong>Dc home oral hypoglycemics</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
+'SKIN': '<h3>SKIN/OTHER</h3><ul><li><strong>Wounds/wound care</strong></li><li><strong>PT/OT OOB to chair</strong></li><li><strong>RESTART HOME MEDS when able</strong></li><li><strong>HCP/GOALS OF CARE</strong></li></ul>',
+
 };
 
 		
