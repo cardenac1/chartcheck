@@ -4769,6 +4769,97 @@ ${finalLine}`;
             downloadFile(rtf, filename, 'application/rtf');
         }
 
+        // ============ SYSTEMS-BASED NOTE EXPORT ============
+        function exportSystemsNote() {
+            if (currentPatientIndex === -1) {
+                alert('No patient selected');
+                return;
+            }
+
+            const patient = patientData[currentPatientIndex];
+            const name = patient['Name'] || 'Patient';
+            const rm = patient['RM'] || '';
+            const mrn = patient['MRN'] || '';
+
+            // Extract system field data
+            const neuro = patient['NEURO'] || '';
+            const pulm = patient['PULM'] || '';
+            const cv = patient['CV'] || '';
+            const gi = patient['GI'] || '';
+            const renal = patient['RENAL'] || '';
+            const heme = patient['HEME'] || '';
+            const infection = patient['INFECTION'] || '';
+            const endo = patient['ENDO'] || '';
+            const skin = patient['SKIN'] || '';
+
+            // Build RTF content with systems-based format
+            let noteText = `\\b Patient: \\b0${name}${rm ? ` | RM: ${rm}` : ''}${mrn ? ` | MRN: ${mrn}` : ''}\\par\\par\n\n`;
+
+            // NEURO section
+            noteText += `\\b\\ul NEURO:\\ul0\\b0\\par\n`;
+            noteText += `${neuro || 'Dx: [No Active Issues]\\parExam: [GCS 15 (E4V5M6), pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI]\\parMeds: ( neuro meds)\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\n`;
+            noteText += `-Continue to monitor for acute changes and adequate pain/sedation management, RASS goal 0\\par\\par\n\n`;
+
+            // PULM section
+            noteText += `\\b\\ul PULM:\\ul0\\b0\\par\n`;
+            noteText += `${pulm || 'Dx: No Active Issues\\parExam: [CTAB, regular rate, Satting >95% on ] (O2 therapy mode/vent settings)\\parMeds: [pulmonary meds]\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\n`;
+            noteText += `-Continue to monitor respiratory status for any changes\\par\n`;
+            noteText += `-Continue to encourage pulmonary toileting, coughing/deep breathing, and incentive spirometry\\par\\par\n\n`;
+
+            // CV section
+            noteText += `\\b\\ul CV:\\ul0\\b0\\par\n`;
+            noteText += `${cv || 'Dx: [No Active Issues]\\parExam: [MAP>65, RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access]\\parMeds: [cardiac meds]\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\n`;
+            noteText += `-Continue to monitor hemodynamics\\par\\par\n\n`;
+
+            // GI section
+            noteText += `\\b\\ul GI:\\ul0\\b0\\par\n`;
+            noteText += `${gi || 'Dx: [No Active Issues]\\parExam: [abd soft, non tender non distended, incisions c/d/i, JP with SS output, BMx1]\\parNutrition: (diet order)\\parGI ppx: (stress ulcer prophylaxis meds)\\parBowel reg: (constipation and diarrhea meds, nausea meds)\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\\par\n\n`;
+
+            // RENAL/FLUIDS section
+            noteText += `\\b\\ul RENAL/FLUIDS:\\ul0\\b0\\par\n`;
+            noteText += `${renal || 'Dx: [No Active Issues]\\parExam: (foley status, Urine output in 24 hrs, I/O, fluid balance)\\parElectrolytes: (Na, K, Cl, CO2, BUN, Cr, Ca, Mag, P)\\parIVF: ( IV fluid orders)\\parMeds: (renal meds)\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\n`;
+            noteText += `-Monitor strict intake/output\\par\n`;
+            noteText += `-Continue to optimize electrolytes as needed\\par\\par\n\n`;
+
+            // HEME section
+            noteText += `\\b\\ul HEME:\\ul0\\b0\\par\n`;
+            noteText += `${heme || 'Dx: [No Active Issues]\\parLabs: (Hgb, PLT, PT, PTT/INR, Fibrinogen)\\parDVT ppx: (anticoagulation order)\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\\par\n\n`;
+
+            // INFECTION section
+            noteText += `\\b\\ul INFECTION:\\ul0\\b0\\par\n`;
+            noteText += `${infection || 'Dx: [No Active Issues]\\parCx: [none]\\parExam: (WBC count, Tmax, T average)\\parAbx: (antibiotic meds)\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\\par\n\n`;
+
+            // ENDO section
+            noteText += `\\b\\ul ENDO:\\ul0\\b0\\par\n`;
+            noteText += `${endo || 'Dx: [No Active Issues]\\parBG: (blood glucose range)\\parMeds: (endocrine meds, insulin orders)\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\\par\n\n`;
+
+            // SKIN/OTHER section
+            noteText += `\\b\\ul SKIN:\\ul0\\b0\\par\n`;
+            noteText += `${skin || 'Dx: No Active Issues\\par'}\\par\n`;
+            noteText += `\\b Plan:\\b0\\par\n`;
+            noteText += `-Turn and reposition frequently for decub ppx\\par\n`;
+            noteText += `-Continue decub prevention protocol per hospital policy\\par\n`;
+            noteText += `-PT/OT OOB to chair\\par\\par\n\n`;
+
+            // Create RTF file
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+            const filename = `systems_note_${patient['Name'] || 'patient'}_${timestamp}.rtf`;
+
+            const rtf = `{\\rtf1\\ansi\\deff0\n${noteText}}`;
+            downloadFile(rtf, filename, 'application/rtf');
+
+            alert('Systems note exported successfully!');
+        }
+
         // ============ CHART CHECK MODE FUNCTIONS ============
 
 
