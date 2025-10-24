@@ -2334,9 +2334,9 @@ async function testOCRAvailability() {
             <div id="importLabsTable"></div>
         </div>
 
-        <!-- Vitals Dashboard Display -->
+        <!-- Vitals Graphs Display -->
         <div id="importVitalsContainer" style="display: none; margin-top: 1rem;">
-            <h3>📈 Vitals Dashboard</h3>
+            <h3>📈 Vitals Graphs</h3>
             <div id="importVitalsTable"></div>
         </div>
     </div>
@@ -3767,10 +3767,30 @@ case 'chartcheck':
                 if (header === 'Name' || header === 'RM' || header === 'MRN' || header === 'Att' || header === 'Priority') {
                     input = document.createElement('input');
                     input.type = 'text';
+                    input.style.cssText = `
+                        width: 100%;
+                        padding: 0.75rem;
+                        background: var(--card-bg);
+                        border: 1px solid var(--border);
+                        border-radius: 0.25rem;
+                        color: var(--text-primary);
+                        font-size: 1rem;
+                    `;
                 } else {
                     input = document.createElement('textarea');
+                    input.style.cssText = `
+                        width: 100%;
+                        min-height: 80px;
+                        padding: 0.75rem;
+                        background: var(--card-bg);
+                        border: 1px solid var(--border);
+                        border-radius: 0.25rem;
+                        color: var(--text-primary);
+                        font-size: 1rem;
+                        resize: vertical;
+                    `;
                 }
-                
+
                 input.id = `field_${header.replace(/\s+/g, '_')}`;
                 input.value = patient[header] || '';
                 
@@ -5673,18 +5693,62 @@ function showImportModal() {
         importLabsTableContainer.style.display = 'none';
     }
 
-    // Display vitals dashboard in import modal
+    // Display vitals visualization (graphs) in import modal
     const importVitalsContainer = document.getElementById('importVitalsContainer');
     const importVitalsTable = document.getElementById('importVitalsTable');
 
-    if (labData && Object.keys(labData.vitals || {}).length > 0) {
-        importVitalsTable.innerHTML = generateVitalsTableHTML(labData);
-        importVitalsContainer.style.display = 'block';
+    if (labData && labData.vitals && Object.keys(labData.vitals).length > 0) {
+        try {
+            importVitalsTable.innerHTML = ''; // Clear previous content
+            const vitalsViz = createVitalsVisualization(labData.vitals);
+            importVitalsTable.appendChild(vitalsViz);
+            importVitalsContainer.style.display = 'block';
+        } catch (e) {
+            console.error('Error creating vitals visualization:', e);
+            importVitalsTable.innerHTML = '<p>Error displaying vitals visualization.</p>';
+        }
     } else {
         importVitalsContainer.style.display = 'none';
     }
 
-    // Don't close modal automatically - user can review warnings/labs/vitals
+    // Display I/O dashboard in import modal
+    const importIOContainer = document.createElement('div');
+    importIOContainer.id = 'importIOContainer';
+    importIOContainer.style.cssText = 'display: none; margin-top: 1rem;';
+
+    const importIOTitle = document.createElement('h3');
+    importIOTitle.textContent = '💧 I/O Dashboard';
+    importIOContainer.appendChild(importIOTitle);
+
+    const importIODashboard = document.createElement('div');
+    importIODashboard.id = 'importIODashboard';
+    importIOContainer.appendChild(importIODashboard);
+
+    // Only append if not already in DOM
+    if (!document.getElementById('importIOContainer')) {
+        document.querySelector('#importModal .modal-content').appendChild(importIOContainer);
+    }
+
+    // Extract I/O data and display dashboard
+    const ioData = extractIntakeOutputData(importText);
+    if (ioData && (ioData.intakes || ioData.outputs)) {
+        try {
+            importIODashboard.innerHTML = ''; // Clear previous content
+            const ioDashboard = createIODashboard(ioData, labData);
+            importIODashboard.appendChild(ioDashboard);
+            document.getElementById('importIOContainer').style.display = 'block';
+        } catch (e) {
+            console.error('Error creating I/O dashboard:', e);
+            importIODashboard.innerHTML = '<p>Error displaying I/O dashboard.</p>';
+        }
+    } else {
+        const ioContainerElement = document.getElementById('importIOContainer');
+        if (ioContainerElement) {
+            ioContainerElement.style.display = 'none';
+        }
+    }
+
+    // Don't close modal automatically - user can review warnings/labs/vitals/IO
     // closeImportModal();
     
 // Force refresh ALL displays regardless of mode
