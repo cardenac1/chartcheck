@@ -5029,6 +5029,303 @@ function showImportModal() {
             document.getElementById('importModal').style.display = 'none';
         }
 
+        // ============ SYSTEM FIELDS AUTO-POPULATION WITH ABNORMAL DETECTION ============
+
+        function extractAndFormatSystemsData(text, labDataObj) {
+            const systems = {};
+
+            // Extract medications by system
+            const meds = extractMedsBySystem(text);
+
+            // Extract and format labs with abnormal detection
+            const formattedLabs = formatLabsWithAbnormals(labDataObj);
+
+            // Extract vitals
+            const vitals = extractVitalsForSystems(text);
+
+            // Extract I/O
+            const io = extractIOForSystems(text);
+
+            // Build each system section
+            systems.NEURO = buildNeuroWithData(meds.neuro);
+            systems.PULM = buildPulmWithData(meds.pulm, vitals);
+            systems.CV = buildCVWithData(meds.cv, vitals);
+            systems.GI = buildGIWithData(meds.gi);
+            systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal);
+            systems.HEME = buildHemeWithData(formattedLabs, meds.anticoag);
+            systems.INFECTION = buildInfectionWithData(formattedLabs, meds.antibiotics);
+            systems.ENDO = buildEndoWithData(formattedLabs, meds.endo);
+            systems.SKIN = buildSkinWithData();
+
+            return systems;
+        }
+
+        function formatLabsWithAbnormals(labDataObj) {
+            const formatted = {};
+
+            // Define abnormal thresholds
+            const thresholds = {
+                hgb: {low: 7, high: 18, significant: 1},
+                wbc: {low: 4, high: 11},
+                plt: {low: 150, high: 400},
+                na: {low: 135, high: 145},
+                k: {low: 3.5, high: 5.0},
+                cr: {low: 0.6, high: 1.2},
+                glu: {low: 70, high: 180}
+            };
+
+            for (const [labName, values] of Object.entries(labDataObj.labs || {})) {
+                if (!values || values.length === 0) continue;
+
+                const current = values[values.length - 1];
+                const previous = values.length > 1 ? values[values.length - 2] : null;
+                const threshold = thresholds[labName];
+
+                let isAbnormal = false;
+                let significantDrop = false;
+
+                if (threshold) {
+                    isAbnormal = current < threshold.low || current > threshold.high;
+                    if (previous && threshold.significant) {
+                        significantDrop = Math.abs(current - previous) >= threshold.significant;
+                    }
+                }
+
+                // Format with asterisks for abnormal values
+                if (isAbnormal || significantDrop) {
+                    formatted[labName] = previous !== null
+                        ? `*${current}* (${previous})`
+                        : `*${current}*`;
+                } else {
+                    formatted[labName] = previous !== null
+                        ? `${current} (${previous})`
+                        : `${current}`;
+                }
+            }
+
+            return formatted;
+        }
+
+        function extractMedsBySystem(text) {
+            const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: []};
+
+            const patterns = {
+                neuro: /fentanyl|morphine|hydromorphone|oxycodone|gabapentin|pregabalin|levetiracetam|propofol|midazolam|lorazepam|dexmedetomidine/gi,
+                pulm: /albuterol|ipratropium|duoneb|budesonide|fluticasone/gi,
+                cv: /metoprolol|carvedilol|labetalol|lisinopril|losartan|amlodipine|diltiazem|hydralazine|furosemide|norepinephrine|epinephrine|vasopressin|amiodarone|atorvastatin|rosuvastatin/gi,
+                gi: /ondansetron|pantoprazole|omeprazole|famotidine|docusate|senna|bisacodyl|miralax|metoclopramide/gi,
+                anticoag: /heparin|enoxaparin|warfarin|apixaban|rivaroxaban|aspirin|clopidogrel/gi,
+                antibiotics: /vancomycin|cefepime|piperacillin|tazobactam|meropenem|ceftriaxone|levofloxacin|metronidazole|daptomycin|linezolid|fluconazole/gi,
+                endo: /insulin|lispro|aspart|glargine|levothyroxine/gi
+            };
+
+            const medSection = text.match(/Medications.*?(?=(?:\n\n|DIET ORDER:|LABS:|$))/is);
+            if (medSection) {
+                const medText = medSection[0];
+                for (const [system, pattern] of Object.entries(patterns)) {
+                    let match;
+                    while ((match = pattern.exec(medText)) !== null) {
+                        const medName = match[0];
+                        if (!meds[system].includes(medName.toLowerCase())) {
+                            meds[system].push(medName);
+                        }
+                    }
+                }
+            }
+            return meds;
+        }
+
+        function extractVitalsForSystems(text) {
+            const vitals = {};
+            const hrMatch = text.match(/Heart Rate:?\s*(\d+)/i);
+            if (hrMatch) vitals.hr = hrMatch[1];
+            const bpMatch = text.match(/Blood Pressure:?\s*(\d+\/\d+)/i);
+            if (bpMatch) vitals.bp = bpMatch[1];
+            const mapMatch = text.match(/MAP:?\s*(\d+)/i);
+            if (mapMatch) vitals.map = mapMatch[1];
+            const rrMatch = text.match(/Respiratory Rate:?\s*(\d+)/i);
+            if (rrMatch) vitals.rr = rrMatch[1];
+            const o2Match = text.match(/SpO2:?\s*(\d+)/i);
+            if (o2Match) vitals.o2 = o2Match[1];
+            return vitals;
+        }
+
+        function extractIOForSystems(text) {
+            const io = {};
+            const uopMatch = text.match(/(?:Urine|UOP).*?(\d+)\s*(?:mL|ml)/i);
+            if (uopMatch) io.uop = uopMatch[1];
+            const totalInMatch = text.match(/Total.*?In.*?(\d+)\s*(?:mL|ml)/i);
+            if (totalInMatch) io.totalIn = totalInMatch[1];
+            const totalOutMatch = text.match(/Total.*?Out.*?(\d+)\s*(?:mL|ml)/i);
+            if (totalOutMatch) io.totalOut = totalOutMatch[1];
+            if (io.totalIn && io.totalOut) {
+                io.balance = parseInt(io.totalIn) - parseInt(io.totalOut);
+            }
+            return io;
+        }
+
+        function buildNeuroWithData(neuroMeds) {
+            return `Dx: [No Active Issues]\nExam: [GCS 15 (E4V5M6), pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI]\nMeds: (${neuroMeds.length > 0 ? neuroMeds.join(', ') : 'none'})`;
+        }
+
+        function buildPulmWithData(pulmMeds, vitals) {
+            let section = 'Dx: [No Active Issues]\nExam: [CTAB, regular rate';
+            if (vitals.o2) section += `, Satting ${vitals.o2}% on `;
+            if (vitals.rr) section += `, RR ${vitals.rr}`;
+            section += '] (O2 therapy mode/vent settings)\nMeds: (' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none') + ')';
+            return section;
+        }
+
+        function buildCVWithData(cvMeds, vitals) {
+            let section = 'Dx: [No Active Issues]\nExam: ';
+            if (vitals.hr) section += `HR ${vitals.hr}, `;
+            if (vitals.bp) section += `BP ${vitals.bp}, `;
+            if (vitals.map) section += `MAP ${vitals.map}, `;
+            section += '[RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access]\nMeds: (' + (cvMeds.length > 0 ? cvMeds.join(', ') : 'none') + ')';
+            return section;
+        }
+
+        function buildGIWithData(giMeds) {
+            let section = 'Dx: [No Active Issues]\nExam: [abd soft, non tender non distended, incisions c/d/i, BMx1]\nNutrition: (diet order)\n';
+            const ppxMeds = giMeds.filter(m => m.toLowerCase().includes('pantoprazole') || m.toLowerCase().includes('famotidine') || m.toLowerCase().includes('omeprazole'));
+            const bowelMeds = giMeds.filter(m => m.toLowerCase().includes('docusate') || m.toLowerCase().includes('senna') || m.toLowerCase().includes('miralax'));
+            section += `GI ppx: (${ppxMeds.length > 0 ? ppxMeds.join(', ') : 'none'})\n`;
+            section += `Bowel reg: (${bowelMeds.length > 0 ? bowelMeds.join(', ') : 'none'})`;
+            return section;
+        }
+
+        function buildRenalWithData(labs, io, renalMeds) {
+            let section = 'Dx: [No Active Issues]\nExam: ';
+            if (io.uop) section += `UOP ${io.uop} mL/24hr, `;
+            if (io.totalIn) section += `In ${io.totalIn}mL, `;
+            if (io.totalOut) section += `Out ${io.totalOut}mL, `;
+            if (io.balance) section += `Balance ${io.balance > 0 ? '+' : ''}${io.balance}mL`;
+            section += '\nElectrolytes: (';
+            if (labs.na) section += `Na ${labs.na}, `;
+            if (labs.k) section += `K ${labs.k}, `;
+            if (labs.cl) section += `Cl ${labs.cl}, `;
+            if (labs.co2) section += `CO2 ${labs.co2}, `;
+            if (labs.bun) section += `BUN ${labs.bun}, `;
+            if (labs.cr) section += `Cr ${labs.cr}, `;
+            if (labs.ca) section += `Ca ${labs.ca}, `;
+            if (labs.mg) section += `Mg ${labs.mg}`;
+            section += ')\nIVF: (IV fluid orders)\nMeds: (' + (renalMeds.length > 0 ? renalMeds.join(', ') : 'none') + ')';
+            return section;
+        }
+
+        function buildHemeWithData(labs, anticoagMeds) {
+            let section = 'Dx: [No Active Issues]\nLabs: (';
+            if (labs.hgb) section += `Hgb ${labs.hgb}, `;
+            if (labs.plt) section += `PLT ${labs.plt}, `;
+            if (labs.pt) section += `PT ${labs.pt}, `;
+            if (labs.ptt) section += `PTT ${labs.ptt}, `;
+            if (labs.inr) section += `INR ${labs.inr}`;
+            section += ')\nDVT ppx: (' + (anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none') + ')';
+            return section;
+        }
+
+        function buildInfectionWithData(labs, antibiotics) {
+            let section = 'Dx: [No Active Issues]\nCx: [none]\nExam: (';
+            if (labs.wbc) section += `WBC ${labs.wbc}, `;
+            section += 'Tmax, T average)\nAbx: (' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none') + ')';
+            return section;
+        }
+
+        function buildEndoWithData(labs, endoMeds) {
+            let section = 'Dx: [No Active Issues]\nBG: (';
+            if (labs.glu) section += `glucose ${labs.glu}`;
+            section += ' blood glucose range)\nMeds: (' + (endoMeds.length > 0 ? endoMeds.join(', ') : 'none') + ')';
+            return section;
+        }
+
+        function buildSkinWithData() {
+            return 'Dx: [No Active Issues]';
+        }
+
+        // ============ BRACKET MERGING LOGIC ============
+        // "( )" sections always refresh with new data
+        // "[ ]" sections preserve existing data or use placeholders if empty
+
+        function mergeBracketedContent(existingText, newText) {
+            if (!existingText || existingText.trim() === '') {
+                return newText; // No existing content, use all new data
+            }
+
+            // Parse the new text to identify sections with brackets
+            const sections = [];
+            let currentPos = 0;
+
+            // Find all bracketed sections in new text
+            const bracketRegex = /(\([^)]*\)|\[[^\]]*\])/g;
+            let match;
+
+            // Build a map of labels to bracket types and content
+            const lines = newText.split('\n');
+            const mergedLines = [];
+
+            for (const newLine of lines) {
+                const labelMatch = newLine.match(/^([^:]+):\s*(.*)$/);
+
+                if (!labelMatch) {
+                    mergedLines.push(newLine);
+                    continue;
+                }
+
+                const label = labelMatch[1];
+                const newContent = labelMatch[2];
+
+                // Find corresponding line in existing text
+                const existingLines = existingText.split('\n');
+                const existingLine = existingLines.find(line => line.startsWith(label + ':'));
+
+                if (!existingLine) {
+                    // No existing line with this label, use new content
+                    mergedLines.push(newLine);
+                    continue;
+                }
+
+                const existingContent = existingLine.substring(label.length + 1).trim();
+
+                // Determine bracket type in new content
+                const parenMatch = newContent.match(/^\((.*)\)$/);
+                const bracketMatch = newContent.match(/^\[(.*)\]$/);
+
+                if (parenMatch) {
+                    // Parentheses = always refresh with new data
+                    mergedLines.push(newLine);
+                } else if (bracketMatch) {
+                    // Brackets = preserve existing or use new if empty
+                    const existingInnerContent = existingContent.replace(/^\[|\]$/g, '').trim();
+
+                    // Check if existing content is a placeholder or has real data
+                    const isPlaceholder = existingInnerContent === bracketMatch[1].trim() ||
+                                        existingInnerContent === '' ||
+                                        existingInnerContent === 'No Active Issues' ||
+                                        existingInnerContent.startsWith('GCS 15') ||
+                                        existingInnerContent.startsWith('CTAB') ||
+                                        existingInnerContent.startsWith('RRR') ||
+                                        existingInnerContent.startsWith('abd soft');
+
+                    if (isPlaceholder) {
+                        // Use new data
+                        mergedLines.push(newLine);
+                    } else {
+                        // Preserve existing data
+                        mergedLines.push(`${label}: [${existingInnerContent}]`);
+                    }
+                } else {
+                    // No brackets, use new content
+                    mergedLines.push(newLine);
+                }
+            }
+
+            return mergedLines.join('\n');
+        }
+
+        function mergeSystemFieldWithBrackets(fieldName, existingContent, newContent) {
+            return mergeBracketedContent(existingContent || '', newContent || '');
+        }
+
 
 
 
@@ -5084,17 +5381,64 @@ function showImportModal() {
     // Update patient data
     patient.VIOLIN = fishbone;
     patient.LabData = JSON.stringify(labData);
-    
+
     // Update textarea
     if (violinField) {
         violinField.value = fishbone;
         autoResizeTextarea(violinField);
     }
-    
- 
+
+    // AUTO-POPULATE SYSTEM FIELDS WITH BRACKET LOGIC
+    try {
+        // Get existing content from each field
+        const existingContent = {};
+        const systemFields = ['NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
+        systemFields.forEach(field => {
+            existingContent[field] = patient[field] || '';
+        });
+
+        // Extract new data from import
+        const systemsData = extractAndFormatSystemsData(importText, labData);
+
+        // Merge existing content with new data using bracket logic
+        // "( )" sections always refresh, "[ ]" sections preserve existing data
+        const mergedData = {};
+        systemFields.forEach(field => {
+            mergedData[field] = mergeSystemFieldWithBrackets(
+                field,
+                existingContent[field],
+                systemsData[field]
+            );
+        });
+
+        // Update patient object with merged system fields
+        patient.NEURO = mergedData.NEURO || patient.NEURO || '';
+        patient.PULM = mergedData.PULM || patient.PULM || '';
+        patient.CV = mergedData.CV || patient.CV || '';
+        patient.GI = mergedData.GI || patient.GI || '';
+        patient.RENAL = mergedData.RENAL || patient.RENAL || '';
+        patient.HEME = mergedData.HEME || patient.HEME || '';
+        patient.INFECTION = mergedData.INFECTION || patient.INFECTION || '';
+        patient.ENDO = mergedData.ENDO || patient.ENDO || '';
+        patient.SKIN = mergedData.SKIN || patient.SKIN || '';
+
+        // Update UI fields if they exist
+        setTimeout(() => {
+            systemFields.forEach(field => {
+                const fieldElem = document.getElementById(`field_${field}`);
+                if (fieldElem && mergedData[field]) {
+                    fieldElem.value = mergedData[field];
+                    if (fieldElem.tagName === 'TEXTAREA') {
+                        autoResizeTextarea(fieldElem);
+                    }
+                }
+            });
+        }, 200);
+    } catch (e) {
+        console.error('Error auto-populating system fields:', e);
+    }
 
 
-    
     saveToLocalStorage();
 
     // Auto-populate Plan field after import
