@@ -3616,6 +3616,9 @@ case 'chartcheck':
                 border-right: 1px solid var(--border);
             `;
 
+            // Define checkbox fields (none needed for new system-based structure)
+            const checkboxFields = [];
+
             // New field structure: NAME, RM, MRN, PRIORITY at top, then system fields
             const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
             fieldsToShowChartCheck.forEach(header => {
