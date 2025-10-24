@@ -2313,7 +2313,7 @@ async function testOCRAvailability() {
 
 	<!-- Import Data Modal -->
 <div id="importModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content large-modal">
         <span class="close" onclick="closeImportModal()" style="float: right; font-size: 30px; cursor: pointer; color: var(--danger);">&times;</span>
         <h2>Import Lab Data</h2>
         <div class="nav-buttons" style="margin-bottom: 1rem;">
@@ -2321,6 +2321,24 @@ async function testOCRAvailability() {
             <button onclick="processImportedData()">Process Data</button>
         </div>
         <textarea id="importData" class="import-textarea" placeholder="Paste your vitals, labs, and meds data here..."></textarea>
+
+        <!-- Warnings Display -->
+        <div id="warningsContainer" style="display: none; margin-top: 1rem; padding: 1rem; background: var(--danger-bg, #fee); border: 2px solid var(--danger); border-radius: 0.5rem;">
+            <h3 style="margin-top: 0; color: var(--danger);">⚠️ Clinical Warnings</h3>
+            <div id="warningsContent"></div>
+        </div>
+
+        <!-- Labs Table Display -->
+        <div id="importLabsTableContainer" style="display: none; margin-top: 1rem;">
+            <h3>📊 Lab Values</h3>
+            <div id="importLabsTable"></div>
+        </div>
+
+        <!-- Vitals Dashboard Display -->
+        <div id="importVitalsContainer" style="display: none; margin-top: 1rem;">
+            <h3>📈 Vitals Dashboard</h3>
+            <div id="importVitalsTable"></div>
+        </div>
     </div>
 </div>
 
@@ -3494,7 +3512,7 @@ function switchView(mode) {
     
     switch(mode) {
         case 'basic':
-    fieldsToShow = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'VIOLIN', 'ORDERS', 'Plan', 'To do', 'Priority'];
+    fieldsToShow = ['Name', 'RM', 'MRN', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'To do'];
             break;
 
       
@@ -5029,6 +5047,185 @@ function showImportModal() {
             document.getElementById('importModal').style.display = 'none';
         }
 
+        // ============ TABLE GENERATION HELPERS ============
+
+        function generateTableHTML(labDataObj) {
+            if (!labDataObj || Object.keys(labDataObj).length === 0) {
+                return '<p>No lab data available.</p>';
+            }
+
+            let tableHTML = '<table class="data-table" style="width: 100%; border-collapse: collapse;">';
+            tableHTML += '<tr><th style="border: 1px solid var(--border); padding: 0.5rem; background: var(--card-bg);">Parameter</th>';
+
+            const maxValues = Math.max(
+                ...Object.values(labDataObj.labs || {}).map(arr => arr ? arr.length : 0)
+            );
+
+            for (let i = 0; i < maxValues; i++) {
+                tableHTML += `<th style="border: 1px solid var(--border); padding: 0.5rem; background: var(--card-bg);">Value ${i + 1}</th>`;
+            }
+            tableHTML += '</tr>';
+
+            // Add labs
+            if (labDataObj.labs) {
+                for (const [labName, values] of Object.entries(labDataObj.labs)) {
+                    tableHTML += `<tr><td style="border: 1px solid var(--border); padding: 0.5rem; font-weight: 500;">${labName.toUpperCase()}</td>`;
+                    values.forEach(val => {
+                        tableHTML += `<td style="border: 1px solid var(--border); padding: 0.5rem;">${val}</td>`;
+                    });
+                    tableHTML += '</tr>';
+                }
+            }
+
+            tableHTML += '</table>';
+            return tableHTML;
+        }
+
+        function generateVitalsTableHTML(labDataObj) {
+            if (!labDataObj || !labDataObj.vitals || Object.keys(labDataObj.vitals).length === 0) {
+                return '<p>No vitals data available.</p>';
+            }
+
+            let tableHTML = '<table class="data-table" style="width: 100%; border-collapse: collapse;">';
+            tableHTML += '<tr><th style="border: 1px solid var(--border); padding: 0.5rem; background: var(--card-bg);">Vital Sign</th>';
+
+            const maxValues = Math.max(
+                ...Object.values(labDataObj.vitals).map(arr => arr ? arr.length : 0)
+            );
+
+            for (let i = 0; i < maxValues; i++) {
+                tableHTML += `<th style="border: 1px solid var(--border); padding: 0.5rem; background: var(--card-bg);">Reading ${i + 1}</th>`;
+            }
+            tableHTML += '</tr>';
+
+            const vitalLabels = {
+                temp: 'Temperature',
+                hr: 'Heart Rate',
+                sbp: 'Systolic BP',
+                dbp: 'Diastolic BP',
+                o2: 'O2 Saturation',
+                rr: 'Respiratory Rate'
+            };
+
+            for (const [vitalKey, label] of Object.entries(vitalLabels)) {
+                if (labDataObj.vitals[vitalKey]) {
+                    tableHTML += `<tr><td style="border: 1px solid var(--border); padding: 0.5rem; font-weight: 500;">${label}</td>`;
+                    labDataObj.vitals[vitalKey].forEach(val => {
+                        const unit = vitalKey === 'temp' ? '°C' : (vitalKey === 'o2' ? '%' : '');
+                        tableHTML += `<td style="border: 1px solid var(--border); padding: 0.5rem;">${val}${unit}</td>`;
+                    });
+                    tableHTML += '</tr>';
+                }
+            }
+
+            tableHTML += '</table>';
+            return tableHTML;
+        }
+
+        // ============ WARNINGS GENERATOR ============
+
+        function generateWarnings(labDataObj, importText) {
+            const warnings = [];
+
+            if (!labDataObj || !labDataObj.labs) return warnings;
+
+            const labs = labDataObj.labs;
+
+            // Get most recent values
+            const getLatest = (labName) => {
+                const values = labs[labName];
+                return values && values.length > 0 ? values[values.length - 1] : null;
+            };
+
+            const getPrevious = (labName) => {
+                const values = labs[labName];
+                return values && values.length > 1 ? values[values.length - 2] : null;
+            };
+
+            // Critical lab value warnings
+            const hgb = getLatest('hgb');
+            const prevHgb = getPrevious('hgb');
+            if (hgb !== null) {
+                if (hgb < 7) {
+                    warnings.push(`CRITICAL: Hemoglobin ${hgb} g/dL (critically low - consider transfusion)`);
+                } else if (hgb < 8) {
+                    warnings.push(`WARNING: Hemoglobin ${hgb} g/dL (low - monitor closely)`);
+                }
+                if (prevHgb !== null && (prevHgb - hgb) >= 1) {
+                    warnings.push(`WARNING: Hemoglobin dropped ${(prevHgb - hgb).toFixed(1)} g/dL (from ${prevHgb} to ${hgb})`);
+                }
+            }
+
+            const plt = getLatest('plt');
+            if (plt !== null) {
+                if (plt < 50) {
+                    warnings.push(`CRITICAL: Platelets ${plt} k/μL (critically low - bleeding risk)`);
+                } else if (plt < 100) {
+                    warnings.push(`WARNING: Platelets ${plt} k/μL (low - monitor for bleeding)`);
+                }
+            }
+
+            const wbc = getLatest('wbc');
+            if (wbc !== null) {
+                if (wbc > 20) {
+                    warnings.push(`WARNING: WBC ${wbc} k/μL (elevated - infection/inflammation?)`);
+                } else if (wbc < 2) {
+                    warnings.push(`CRITICAL: WBC ${wbc} k/μL (critically low - infection risk)`);
+                }
+            }
+
+            const na = getLatest('na');
+            if (na !== null) {
+                if (na < 130) {
+                    warnings.push(`WARNING: Sodium ${na} mEq/L (hyponatremia)`);
+                } else if (na > 150) {
+                    warnings.push(`WARNING: Sodium ${na} mEq/L (hypernatremia)`);
+                }
+            }
+
+            const k = getLatest('k');
+            if (k !== null) {
+                if (k < 3.0) {
+                    warnings.push(`CRITICAL: Potassium ${k} mEq/L (critically low - arrhythmia risk)`);
+                } else if (k > 5.5) {
+                    warnings.push(`CRITICAL: Potassium ${k} mEq/L (critically high - arrhythmia risk)`);
+                } else if (k < 3.5) {
+                    warnings.push(`WARNING: Potassium ${k} mEq/L (low)`);
+                } else if (k > 5.0) {
+                    warnings.push(`WARNING: Potassium ${k} mEq/L (elevated)`);
+                }
+            }
+
+            const cr = getLatest('cr');
+            const prevCr = getPrevious('cr');
+            if (cr !== null) {
+                if (cr > 2.0) {
+                    warnings.push(`WARNING: Creatinine ${cr} mg/dL (elevated - renal function concern)`);
+                }
+                if (prevCr !== null && cr > prevCr * 1.5) {
+                    warnings.push(`WARNING: Creatinine increased ${((cr/prevCr - 1) * 100).toFixed(0)}% (from ${prevCr} to ${cr}) - AKI?`);
+                }
+            }
+
+            const glu = getLatest('glu');
+            if (glu !== null) {
+                if (glu < 70) {
+                    warnings.push(`WARNING: Glucose ${glu} mg/dL (hypoglycemia)`);
+                } else if (glu > 250) {
+                    warnings.push(`WARNING: Glucose ${glu} mg/dL (severe hyperglycemia)`);
+                } else if (glu > 180) {
+                    warnings.push(`WARNING: Glucose ${glu} mg/dL (hyperglycemia)`);
+                }
+            }
+
+            const inr = getLatest('inr');
+            if (inr !== null && inr > 3.0) {
+                warnings.push(`WARNING: INR ${inr} (elevated - bleeding risk, check warfarin dosing)`);
+            }
+
+            return warnings;
+        }
+
         // ============ SYSTEM FIELDS AUTO-POPULATION WITH ABNORMAL DETECTION ============
 
         function extractAndFormatSystemsData(text, labDataObj) {
@@ -5445,9 +5642,50 @@ function showImportModal() {
     setTimeout(() => {
         autoPopulatePlan(true); // Pass true to skip confirmation
     }, 100);
-    
 
-    closeImportModal();
+    // Generate and display warnings
+    const warnings = generateWarnings(labData, importText);
+    const warningsContainer = document.getElementById('warningsContainer');
+    const warningsContent = document.getElementById('warningsContent');
+
+    if (warnings.length > 0) {
+        let warningsHTML = '<ul style="margin: 0; padding-left: 1.5rem;">';
+        warnings.forEach(warning => {
+            const isCritical = warning.startsWith('CRITICAL');
+            const style = isCritical ? 'font-weight: bold; color: var(--danger);' : 'color: #d97706;';
+            warningsHTML += `<li style="${style}">${warning}</li>`;
+        });
+        warningsHTML += '</ul>';
+        warningsContent.innerHTML = warningsHTML;
+        warningsContainer.style.display = 'block';
+    } else {
+        warningsContainer.style.display = 'none';
+    }
+
+    // Display labs table in import modal
+    const importLabsTableContainer = document.getElementById('importLabsTableContainer');
+    const importLabsTable = document.getElementById('importLabsTable');
+
+    if (labData && Object.keys(labData.labs || {}).length > 0) {
+        importLabsTable.innerHTML = generateTableHTML(labData);
+        importLabsTableContainer.style.display = 'block';
+    } else {
+        importLabsTableContainer.style.display = 'none';
+    }
+
+    // Display vitals dashboard in import modal
+    const importVitalsContainer = document.getElementById('importVitalsContainer');
+    const importVitalsTable = document.getElementById('importVitalsTable');
+
+    if (labData && Object.keys(labData.vitals || {}).length > 0) {
+        importVitalsTable.innerHTML = generateVitalsTableHTML(labData);
+        importVitalsContainer.style.display = 'block';
+    } else {
+        importVitalsContainer.style.display = 'none';
+    }
+
+    // Don't close modal automatically - user can review warnings/labs/vitals
+    // closeImportModal();
     
 // Force refresh ALL displays regardless of mode
 setTimeout(() => {
