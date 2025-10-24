@@ -5242,6 +5242,90 @@ function showImportModal() {
             return 'Dx: [No Active Issues]';
         }
 
+        // ============ BRACKET MERGING LOGIC ============
+        // "( )" sections always refresh with new data
+        // "[ ]" sections preserve existing data or use placeholders if empty
+
+        function mergeBracketedContent(existingText, newText) {
+            if (!existingText || existingText.trim() === '') {
+                return newText; // No existing content, use all new data
+            }
+
+            // Parse the new text to identify sections with brackets
+            const sections = [];
+            let currentPos = 0;
+
+            // Find all bracketed sections in new text
+            const bracketRegex = /(\([^)]*\)|\[[^\]]*\])/g;
+            let match;
+
+            // Build a map of labels to bracket types and content
+            const lines = newText.split('\n');
+            const mergedLines = [];
+
+            for (const newLine of lines) {
+                const labelMatch = newLine.match(/^([^:]+):\s*(.*)$/);
+
+                if (!labelMatch) {
+                    mergedLines.push(newLine);
+                    continue;
+                }
+
+                const label = labelMatch[1];
+                const newContent = labelMatch[2];
+
+                // Find corresponding line in existing text
+                const existingLines = existingText.split('\n');
+                const existingLine = existingLines.find(line => line.startsWith(label + ':'));
+
+                if (!existingLine) {
+                    // No existing line with this label, use new content
+                    mergedLines.push(newLine);
+                    continue;
+                }
+
+                const existingContent = existingLine.substring(label.length + 1).trim();
+
+                // Determine bracket type in new content
+                const parenMatch = newContent.match(/^\((.*)\)$/);
+                const bracketMatch = newContent.match(/^\[(.*)\]$/);
+
+                if (parenMatch) {
+                    // Parentheses = always refresh with new data
+                    mergedLines.push(newLine);
+                } else if (bracketMatch) {
+                    // Brackets = preserve existing or use new if empty
+                    const existingInnerContent = existingContent.replace(/^\[|\]$/g, '').trim();
+
+                    // Check if existing content is a placeholder or has real data
+                    const isPlaceholder = existingInnerContent === bracketMatch[1].trim() ||
+                                        existingInnerContent === '' ||
+                                        existingInnerContent === 'No Active Issues' ||
+                                        existingInnerContent.startsWith('GCS 15') ||
+                                        existingInnerContent.startsWith('CTAB') ||
+                                        existingInnerContent.startsWith('RRR') ||
+                                        existingInnerContent.startsWith('abd soft');
+
+                    if (isPlaceholder) {
+                        // Use new data
+                        mergedLines.push(newLine);
+                    } else {
+                        // Preserve existing data
+                        mergedLines.push(`${label}: [${existingInnerContent}]`);
+                    }
+                } else {
+                    // No brackets, use new content
+                    mergedLines.push(newLine);
+                }
+            }
+
+            return mergedLines.join('\n');
+        }
+
+        function mergeSystemFieldWithBrackets(fieldName, existingContent, newContent) {
+            return mergeBracketedContent(existingContent || '', newContent || '');
+        }
+
 
 
 
@@ -5304,28 +5388,46 @@ function showImportModal() {
         autoResizeTextarea(violinField);
     }
 
-    // AUTO-POPULATE SYSTEM FIELDS
+    // AUTO-POPULATE SYSTEM FIELDS WITH BRACKET LOGIC
     try {
+        // Get existing content from each field
+        const existingContent = {};
+        const systemFields = ['NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
+        systemFields.forEach(field => {
+            existingContent[field] = patient[field] || '';
+        });
+
+        // Extract new data from import
         const systemsData = extractAndFormatSystemsData(importText, labData);
 
-        // Update patient object with system fields
-        patient.NEURO = systemsData.NEURO || patient.NEURO || '';
-        patient.PULM = systemsData.PULM || patient.PULM || '';
-        patient.CV = systemsData.CV || patient.CV || '';
-        patient.GI = systemsData.GI || patient.GI || '';
-        patient.RENAL = systemsData.RENAL || patient.RENAL || '';
-        patient.HEME = systemsData.HEME || patient.HEME || '';
-        patient.INFECTION = systemsData.INFECTION || patient.INFECTION || '';
-        patient.ENDO = systemsData.ENDO || patient.ENDO || '';
-        patient.SKIN = systemsData.SKIN || patient.SKIN || '';
+        // Merge existing content with new data using bracket logic
+        // "( )" sections always refresh, "[ ]" sections preserve existing data
+        const mergedData = {};
+        systemFields.forEach(field => {
+            mergedData[field] = mergeSystemFieldWithBrackets(
+                field,
+                existingContent[field],
+                systemsData[field]
+            );
+        });
+
+        // Update patient object with merged system fields
+        patient.NEURO = mergedData.NEURO || patient.NEURO || '';
+        patient.PULM = mergedData.PULM || patient.PULM || '';
+        patient.CV = mergedData.CV || patient.CV || '';
+        patient.GI = mergedData.GI || patient.GI || '';
+        patient.RENAL = mergedData.RENAL || patient.RENAL || '';
+        patient.HEME = mergedData.HEME || patient.HEME || '';
+        patient.INFECTION = mergedData.INFECTION || patient.INFECTION || '';
+        patient.ENDO = mergedData.ENDO || patient.ENDO || '';
+        patient.SKIN = mergedData.SKIN || patient.SKIN || '';
 
         // Update UI fields if they exist
         setTimeout(() => {
-            const systemFields = ['NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
             systemFields.forEach(field => {
                 const fieldElem = document.getElementById(`field_${field}`);
-                if (fieldElem && systemsData[field]) {
-                    fieldElem.value = systemsData[field];
+                if (fieldElem && mergedData[field]) {
+                    fieldElem.value = mergedData[field];
                     if (fieldElem.tagName === 'TEXTAREA') {
                         autoResizeTextarea(fieldElem);
                     }
