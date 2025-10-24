@@ -3514,21 +3514,81 @@ function switchView(mode) {
 
 case 'chartcheck':
             isChartCheckMode = true;
-            
+
+            // Create top buttons container for import functions
+            const topButtonsContainer = document.createElement('div');
+            topButtonsContainer.className = 'chartcheck-top-buttons';
+            topButtonsContainer.style.cssText = `
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+                flex-wrap: wrap;
+                padding: 1rem;
+                background: var(--card-bg);
+                border-radius: 0.5rem;
+                border: 1px solid var(--border);
+            `;
+
+            // Create import buttons
+            const importDataBtn = document.createElement('button');
+            importDataBtn.textContent = '⬇️ IMPORT DATA';
+            importDataBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
+            importDataBtn.onclick = (e) => { e.preventDefault(); showImportModal(); };
+
+            const labsBtn = document.createElement('button');
+            labsBtn.textContent = '📊 LABS';
+            labsBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
+            labsBtn.onclick = (e) => { e.preventDefault(); showTableView(); };
+
+            const vitalsBtn = document.createElement('button');
+            vitalsBtn.textContent = '📈 VITALS';
+            vitalsBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
+            vitalsBtn.onclick = (e) => { e.preventDefault(); showVitalsTable(); };
+
+            const fishboneBtn = document.createElement('button');
+            fishboneBtn.textContent = '🐟 FISHBONE';
+            fishboneBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
+            fishboneBtn.onclick = (e) => { e.preventDefault(); toggleViolinMode(); };
+
+            const abbrevOrdersBtn = document.createElement('button');
+            abbrevOrdersBtn.textContent = '📋 ABBREV ORDERS';
+            abbrevOrdersBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
+            abbrevOrdersBtn.onclick = (e) => { e.preventDefault(); updateOrders(); };
+
+            const fullOrdersBtn = document.createElement('button');
+            fullOrdersBtn.textContent = '📄 FULL ORDERS';
+            fullOrdersBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
+            fullOrdersBtn.onclick = (e) => { e.preventDefault(); toggleOrdersView(); };
+
+            const printNoteBtn = document.createElement('button');
+            printNoteBtn.textContent = '🖨️ PRINT NOTE';
+            printNoteBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem; background: linear-gradient(135deg, #10b981, #059669);`;
+            printNoteBtn.onclick = (e) => { e.preventDefault(); exportSystemsNote(); };
+
+            topButtonsContainer.appendChild(importDataBtn);
+            topButtonsContainer.appendChild(labsBtn);
+            topButtonsContainer.appendChild(vitalsBtn);
+            topButtonsContainer.appendChild(fishboneBtn);
+            topButtonsContainer.appendChild(abbrevOrdersBtn);
+            topButtonsContainer.appendChild(fullOrdersBtn);
+            topButtonsContainer.appendChild(printNoteBtn);
+
+            form.appendChild(topButtonsContainer);
+
             const chartCheckContainer = document.createElement('div');
             chartCheckContainer.className = 'chart-check-layout';
             chartCheckContainer.id = 'chartCheckMainContainer';
             chartCheckContainer.style.cssText = `
                 display: flex;
                 gap: 1rem;
-                height: calc(100vh - 250px);
+                height: calc(100vh - 350px);
                 border: 3px solid var(--border);
                 border-radius: 0.5rem;
                 transition: border-color 0.3s ease, box-shadow 0.3s ease;
                 padding: 1rem;
                 background: var(--dark-bg);
             `;
-            
+
             const leftPanel = document.createElement('div');
             leftPanel.className = 'chart-check-left-panel';
             leftPanel.style.cssText = `
@@ -3537,9 +3597,9 @@ case 'chartcheck':
                 padding-right: 1rem;
                 border-right: 1px solid var(--border);
             `;
-            
-            const checkboxFields = ['Problems', 'VIOLIN', 'ORDERS', 'Plan'];
-const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'VIOLIN', 'ORDERS', 'To do', 'Priority'];            
+
+            // New field structure: NAME, RM, MRN, PRIORITY at top, then system fields
+            const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
             fieldsToShowChartCheck.forEach(header => {
                 const label = document.createElement('label');
                 label.style.cssText = `
@@ -3729,7 +3789,7 @@ const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'VIOLIN'
 
          
             
-// RIGHT PANEL - Plan field only
+// RIGHT PANEL - TO DO field only
 const rightPanel = document.createElement('div');
 rightPanel.className = 'chart-check-right-panel';
 rightPanel.style.cssText = `
@@ -3739,11 +3799,11 @@ rightPanel.style.cssText = `
     background: var(--dark-bg);
     border-radius: 0.5rem;
     padding: 1rem;
-    border: 2px solid var(--primary);
+    border: 2px solid #10b981;
 `;
 
-const planLabel = document.createElement('label');
-planLabel.style.cssText = `
+const todoLabel = document.createElement('label');
+todoLabel.style.cssText = `
     display: block;
     margin-bottom: 0.5rem;
     color: var(--text-secondary);
@@ -3752,12 +3812,12 @@ planLabel.style.cssText = `
     text-transform: uppercase;
 `;
 
-planLabel.innerHTML = `Plan<button class="help-button" onclick="event.stopPropagation(); event.preventDefault(); showHelpModal('Plan')">?</button><button onclick="event.preventDefault(); autoPopulatePlan()" style="margin-left: 0.5rem; padding: 0.3rem 0.6rem; font-size: 0.8rem; background: linear-gradient(135deg, var(--success), #059669);">⚡ Auto-Fill</button>`;
+todoLabel.innerHTML = `TO DO<button class="help-button" onclick="event.stopPropagation(); event.preventDefault(); showHelpModal('To do')">?</button>`;
 
-const planTextarea = document.createElement('textarea');
-planTextarea.id = 'field_Plan';
-planTextarea.value = patient['Plan'] || '';
-planTextarea.style.cssText = `
+const todoTextarea = document.createElement('textarea');
+todoTextarea.id = 'field_To_do';
+todoTextarea.value = patient['To do'] || '';
+todoTextarea.style.cssText = `
     flex: 1;
     resize: none;
     background: var(--card-bg);
@@ -3770,14 +3830,14 @@ planTextarea.style.cssText = `
     overflow-y: auto;
 `;
 
-planTextarea.addEventListener('input', function() {
-    patient['Plan'] = this.value;
+todoTextarea.addEventListener('input', function() {
+    patient['To do'] = this.value;
     saveToLocalStorage();
     autoResizeTextarea(this);
 });
 
-rightPanel.appendChild(planLabel);
-rightPanel.appendChild(planTextarea);
+rightPanel.appendChild(todoLabel);
+rightPanel.appendChild(todoTextarea);
 
 chartCheckContainer.appendChild(leftPanel);
 chartCheckContainer.appendChild(rightPanel);
