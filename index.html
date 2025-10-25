@@ -3743,14 +3743,38 @@ case 'chartcheck':
                 }
                 
                 leftPanel.appendChild(label);
-                
+
                 // Create input field
                 let input;
                 if (header === 'Name' || header === 'RM' || header === 'MRN' || header === 'Att' || header === 'Priority') {
                     input = document.createElement('input');
                     input.type = 'text';
+                    input.style.cssText = `
+                        width: 100%;
+                        padding: 0.5rem;
+                        background: var(--card-bg);
+                        border: 1px solid var(--border);
+                        border-radius: 0.25rem;
+                        color: var(--text-primary);
+                        font-size: 0.9rem;
+                        margin-bottom: 0.75rem;
+                    `;
                 } else {
                     input = document.createElement('textarea');
+                    input.style.cssText = `
+                        width: 100%;
+                        min-height: 100px;
+                        padding: 0.5rem;
+                        background: var(--card-bg);
+                        border: 1px solid var(--border);
+                        border-radius: 0.25rem;
+                        color: var(--text-primary);
+                        font-size: 0.9rem;
+                        font-family: inherit;
+                        resize: vertical;
+                        margin-bottom: 0.75rem;
+                        display: block;
+                    `;
                 }
                 
                 input.id = `field_${header.replace(/\s+/g, '_')}`;
@@ -11071,14 +11095,12 @@ function updateChartCheckProgress() {
 let violinEditMode = false;
 
 function toggleViolinMode() {
-    // ALWAYS show both - never hide anything
     const violinTextarea = document.getElementById('field_VIOLIN');
     const violinDisplay = document.getElementById('violinDisplay');
-    const btn = document.getElementById('violinToggleBtn');
 
-    // Keep both visible at all times
+    // ALWAYS show violin display, ALWAYS hide violin textarea
     if (violinDisplay) violinDisplay.style.display = 'block';
-    if (violinTextarea) violinTextarea.style.display = 'block';
+    if (violinTextarea) violinTextarea.style.display = 'none';
 
     // Update violin display to refresh content
     updateViolinDisplay();
@@ -11441,12 +11463,12 @@ if (_ioData) {
     }
   }
 
-  // ALWAYS show the violin display, NEVER hide it
+  // ALWAYS show the violin display
   violinDisplay.style.display = 'block';
 
-  // NEVER hide the textarea - keep it always visible
+  // ALWAYS HIDE the VIOLIN textarea - user doesn't want to see it
   const violinTextarea = document.getElementById('field_VIOLIN');
-  if (violinTextarea) violinTextarea.style.display = 'block';
+  if (violinTextarea) violinTextarea.style.display = 'none';
 
   } catch (error) {
     console.error('Error in updateViolinDisplay:', error);
