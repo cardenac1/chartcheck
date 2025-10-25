@@ -5072,11 +5072,11 @@ function showImportModal() {
             systems.PULM = buildPulmWithData(meds.pulm, vitals);
             systems.CV = buildCVWithData(meds.cv, vitals);
             systems.GI = buildGIWithData(meds.gi, meds.diet);
-            systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal);
+            systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal, meds.ivf);
             systems.HEME = buildHemeWithData(formattedLabs, meds.anticoag);
             systems.INFECTION = buildInfectionWithData(formattedLabs, meds.antibiotics);
             systems.ENDO = buildEndoWithData(formattedLabs, meds.endo);
-            systems.SKIN = buildSkinWithData();
+            systems.SKIN = buildSkinWithData(meds.misc);
 
             return systems;
         }
@@ -5128,13 +5128,46 @@ function showImportModal() {
         }
 
         function extractMedsBySystem(text) {
-            const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: [], diet: []};
+            const meds = {
+                neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [],
+                antibiotics: [], endo: [], diet: [], ivf: [], misc: []
+            };
 
             // Helper: Extract diet orders
             const dietMatch = text.match(/DIET ORDER:\s*([^\n]+)/i);
             if (dietMatch && dietMatch[1]) {
                 meds.diet.push(dietMatch[1].trim());
             }
+
+            // Extract IVF/fluid orders
+            const ivfPatterns = [
+                /sodium chloride\s+0\.9%.*?(\d+)\s*mL\/hr/gi,
+                /sodium chloride\s+0\.45%.*?(\d+)\s*mL\/hr/gi,
+                /lactated\s+ringer.*?(\d+)\s*mL\/hr/gi,
+                /plasmalyte.*?(\d+)\s*mL\/hr/gi,
+                /dextrose\s+5%.*?(\d+)\s*mL\/hr/gi,
+                /parenteral nutrition.*?(\d+)\s*mL\/hr/gi
+            ];
+
+            ivfPatterns.forEach(pattern => {
+                let match;
+                while ((match = pattern.exec(text)) !== null) {
+                    const fullMatch = match[0];
+                    if (fullMatch.toLowerCase().includes('sodium chloride 0.9%')) {
+                        meds.ivf.push(`NS@${match[1]}mL/hr`);
+                    } else if (fullMatch.toLowerCase().includes('sodium chloride 0.45%')) {
+                        meds.ivf.push(`1/2NS@${match[1]}mL/hr`);
+                    } else if (fullMatch.toLowerCase().includes('lactated')) {
+                        meds.ivf.push(`LR@${match[1]}mL/hr`);
+                    } else if (fullMatch.toLowerCase().includes('plasmalyte')) {
+                        meds.ivf.push(`PL@${match[1]}mL/hr`);
+                    } else if (fullMatch.toLowerCase().includes('dextrose 5%')) {
+                        meds.ivf.push(`D5W@${match[1]}mL/hr`);
+                    } else if (fullMatch.toLowerCase().includes('parenteral nutrition')) {
+                        meds.ivf.push(`TPN@${match[1]}mL/hr`);
+                    }
+                }
+            });
 
             // Extract medication section
             const medSection = text.match(/Medications.*?\(\d+\)\s*Active([\s\S]*?)(?=(?:\n\n)?(?:DIET ORDER:|CONSULTATION:|PROCEDURE:|IMAGING:|LABS:|$))/i);
@@ -5359,6 +5392,9 @@ function showImportModal() {
                 meds.endo.push(med.formatted);
                 return;
             }
+
+            // If not categorized, add to misc
+            meds.misc.push(med.formatted);
         }
 
         function extractVitalsForSystems(text) {
@@ -5421,23 +5457,67 @@ function showImportModal() {
             return section;
         }
 
-        function buildRenalWithData(labs, io, renalMeds) {
+        function buildRenalWithData(labs, io, renalMeds, ivfOrders) {
             let section = 'Dx: No Active Issues\nExam: ';
             if (io.uop) section += `UOP ${io.uop} mL/24hr, `;
             if (io.totalIn) section += `In ${io.totalIn}mL, `;
             if (io.totalOut) section += `Out ${io.totalOut}mL, `;
             if (io.balance) section += `Balance ${io.balance > 0 ? '+' : ''}${io.balance}mL`;
+
             section += '\nElectrolytes: ';
-            if (labs.na) section += `Na ${labs.na}, `;
-            if (labs.k) section += `K ${labs.k}, `;
-            if (labs.cl) section += `Cl ${labs.cl}, `;
-            if (labs.co2) section += `CO2 ${labs.co2}, `;
-            if (labs.bun) section += `BUN ${labs.bun}, `;
-            if (labs.cr) section += `Cr ${labs.cr}, `;
-            if (labs.ca) section += `Ca ${labs.ca}, `;
-            if (labs.mg) section += `Mg ${labs.mg}`;
-            section += '\nIVF: IV fluid orders\nMeds: ' + (renalMeds.length > 0 ? renalMeds.join(', ') : 'none');
+
+            // Format electrolytes with abnormal detection
+            const lyteResults = [];
+            if (labs.na) lyteResults.push(formatElectrolyte('Na', labs.na, 135, 145));
+            if (labs.k) lyteResults.push(formatElectrolyte('K', labs.k, 3.5, 5.0));
+            if (labs.cl) lyteResults.push(formatElectrolyte('Cl', labs.cl, 96, 106));
+            if (labs.co2) lyteResults.push(formatElectrolyte('CO2', labs.co2, 23, 29));
+            if (labs.bun) lyteResults.push(formatElectrolyte('BUN', labs.bun, 7, 20));
+            if (labs.cr) lyteResults.push(formatElectrolyte('Cr', labs.cr, 0.6, 1.2));
+            if (labs.ca) lyteResults.push(formatElectrolyte('Ca', labs.ca, 8.5, 10.5));
+            if (labs.mg) lyteResults.push(formatElectrolyte('Mg', labs.mg, 1.7, 2.2));
+
+            section += lyteResults.join(', ');
+
+            section += '\nIVF: ' + (ivfOrders && ivfOrders.length > 0 ? ivfOrders.join(', ') : 'IV fluid orders');
+            section += '\nMeds: ' + (renalMeds.length > 0 ? renalMeds.join(', ') : 'none');
             return section;
+        }
+
+        // Helper function to format electrolytes with abnormal detection
+        function formatElectrolyte(name, valueStr, low, high) {
+            // valueStr could be like "130 (145)" or just "130" or "*130* (145)"
+            const parts = valueStr.split(/\s+/);
+            const currentStr = parts[0].replace(/\*/g, '');
+            const current = parseFloat(currentStr);
+
+            // Check if there's a previous value in parentheses
+            const prevMatch = valueStr.match(/\(([^)]+)\)/);
+            let previous = null;
+            if (prevMatch) {
+                const prevStr = prevMatch[1].replace(/\*/g, '');
+                previous = parseFloat(prevStr);
+            }
+
+            const isAbnormal = current < low || current > high;
+            const isPrevAbnormal = previous !== null && (previous < low || previous > high);
+
+            if (isAbnormal) {
+                // Current is abnormal - show with asterisk
+                if (previous !== null && isPrevAbnormal) {
+                    // Both abnormal
+                    return `${name} *${current} (${previous})*`;
+                } else if (previous !== null) {
+                    // Only current abnormal
+                    return `${name} *${current} (${previous})*`;
+                } else {
+                    // No previous
+                    return `${name} *${current}*`;
+                }
+            } else {
+                // Current is normal - don't show previous
+                return `${name} ${current}`;
+            }
         }
 
         function buildHemeWithData(labs, anticoagMeds) {
@@ -5447,7 +5527,7 @@ function showImportModal() {
             if (labs.pt) section += `PT ${labs.pt}, `;
             if (labs.ptt) section += `PTT ${labs.ptt}, `;
             if (labs.inr) section += `INR ${labs.inr}`;
-            section += '\nDVT ppx: ' + (anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none');
+            section += '\nDVT ppx: ' + (anticoagMeds && anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none');
             return section;
         }
 
@@ -5485,8 +5565,12 @@ function showImportModal() {
             return section;
         }
 
-        function buildSkinWithData() {
-            return 'Dx: No Active Issues';
+        function buildSkinWithData(miscMeds) {
+            let section = 'Dx: No Active Issues';
+            if (miscMeds && miscMeds.length > 0) {
+                section += '\nMeds: ' + miscMeds.join(', ');
+            }
+            return section;
         }
 
         // ============ BRACKET MERGING LOGIC ============
@@ -5570,7 +5654,45 @@ function showImportModal() {
         }
 
         function mergeSystemFieldWithBrackets(fieldName, existingContent, newContent) {
-            return mergeBracketedContent(existingContent || '', newContent || '');
+            // Only update medication-related lines, preserve Dx and Exam lines
+            if (!existingContent || existingContent.trim() === '') {
+                return newContent; // No existing content, use all new data
+            }
+
+            const existingLines = existingContent.split('\n');
+            const newLines = newContent.split('\n');
+
+            // Lines that should be updated from new data
+            const updateableLabels = ['Meds:', 'Abx:', 'DVT ppx:', 'IVF:', 'Bowel reg:', 'GI ppx:',
+                                       'Nutrition:', 'Electrolytes:', 'Labs:', 'BG:'];
+
+            const mergedLines = [];
+
+            for (const newLine of newLines) {
+                const colonIndex = newLine.indexOf(':');
+                if (colonIndex === -1) {
+                    mergedLines.push(newLine);
+                    continue;
+                }
+
+                const label = newLine.substring(0, colonIndex + 1);
+
+                // Check if this label should be updated
+                if (updateableLabels.includes(label)) {
+                    // Use the new data
+                    mergedLines.push(newLine);
+                } else {
+                    // Preserve existing data for this line if it exists
+                    const existingLine = existingLines.find(line => line.startsWith(label));
+                    if (existingLine) {
+                        mergedLines.push(existingLine);
+                    } else {
+                        mergedLines.push(newLine);
+                    }
+                }
+            }
+
+            return mergedLines.join('\n');
         }
 
 
