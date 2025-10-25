@@ -2472,7 +2472,7 @@ const helpContent = {
 'HEME': '<h3>HEME</h3><ul><li><strong>Dx</strong></li><li><strong>Coags:</strong> Hgb, Hct, PLT, PT, PTT/INR, Fibrinogen, ROTEM</li><li><strong>Exam:</strong> BLE edema</li><li><strong>Check start DVT prophylaxis or home AC ex. aspirin/plavix when appropriate</strong></li><li><strong>Dc IV anticoagulants and start PO discharge regimen</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
 'INFECTION': '<h3>INFECTION</h3><ul><li><strong>Dx</strong></li><li><strong>Exam:</strong> WBC, Diff, Cultures with speciation/sensitivities, Tmax, Tcurr</li><li><strong>Abx:</strong> duration, type, route when to dc</li><li><strong>Order Vancomycin/medication trough levels</strong></li><li><strong>DC antibiotics, Otherwise set up long term antibiotic IV access if needed</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
 'ENDO': '<h3>ENDO</h3><ul><li><strong>Dx</strong></li><li><strong>Ideal Glucose range: 140-180</strong></li><li><strong>Convert ISS or insulin gtt to basal bolus regimen when stable (otherwise those are preferred)</strong></li><li><strong>Dc home oral hypoglycemics</strong></li><li><strong>Evidence based mx of active diagnosis</strong></li></ul>',
-'SKIN': '<h3>SKIN/OTHER</h3><ul><li><strong>Wounds/wound care</strong></li><li><strong>PT/OT OOB to chair</strong></li><li><strong>RESTART HOME MEDS when able</strong></li><li><strong>HCP/GOALS OF CARE</strong></li></ul>',
+'SKIN': '<h3>SKIN/OTHER</h3><ul><li><strong>Wounds/wound care</strong></li><li><strong>PT/OT OOB to chair</strong></li><li><strong>Labs Q:</strong></li><li><strong>RESTART HOME MEDS when able</strong></li><li><strong>HCP/GOALS OF CARE</strong></li></ul>',
 
 };
 
@@ -5239,7 +5239,7 @@ function showImportModal() {
         }
 
         function buildSkinWithData() {
-            return 'Dx: [No Active Issues]';
+            return 'Dx: [No Active Issues]\nLabs Q: [ ]';
         }
 
         // ============ BRACKET MERGING LOGIC ============
@@ -11312,13 +11312,12 @@ function updateViolinDisplay(ctx = {}) {
 
   if (!_patientData || _currentIdx < 0 || !_patientData[_currentIdx]) return;
   const patient = _patientData[_currentIdx];
-  if (!patient || !patient.VIOLIN) return;
 
   // Extract I/O data
   const _ioData = _lastImportedData ? extractIntakeOutputData(_lastImportedData) : null;
 
   // Parse fishbone to extract vitals/I/O section
-  const fishboneLines = String(patient.VIOLIN).split('\n');
+  const fishboneLines = patient.VIOLIN ? String(patient.VIOLIN).split('\n') : [];
   const output = [];
   
   // Collect warnings at the top
