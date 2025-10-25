@@ -3518,6 +3518,7 @@ case 'chartcheck':
             // Create top buttons container for import functions
             const topButtonsContainer = document.createElement('div');
             topButtonsContainer.className = 'chartcheck-top-buttons';
+            topButtonsContainer.id = 'chartCheckTopButtons';
             topButtonsContainer.style.cssText = `
                 display: flex;
                 gap: 0.5rem;
@@ -3527,6 +3528,9 @@ case 'chartcheck':
                 background: var(--card-bg);
                 border-radius: 0.5rem;
                 border: 1px solid var(--border);
+                position: sticky;
+                top: 0;
+                z-index: 50;
             `;
 
             // Create import buttons
@@ -3537,13 +3541,28 @@ case 'chartcheck':
 
             const labsBtn = document.createElement('button');
             labsBtn.textContent = '📊 LABS';
+            labsBtn.id = 'labsToggleBtn';
             labsBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
-            labsBtn.onclick = (e) => { e.preventDefault(); showTableView(); };
+            labsBtn.onclick = (e) => {
+                e.preventDefault();
+                const topButtons = document.getElementById('chartCheckTopButtons');
+                if (topButtons) {
+                    topButtons.style.display = 'none';
+                }
+                showTableView();
+            };
 
             const vitalsBtn = document.createElement('button');
             vitalsBtn.textContent = '📈 VITALS';
             vitalsBtn.style.cssText = `padding: 0.5rem 1rem; font-size: 0.9rem;`;
-            vitalsBtn.onclick = (e) => { e.preventDefault(); showVitalsTable(); };
+            vitalsBtn.onclick = (e) => {
+                e.preventDefault();
+                const topButtons = document.getElementById('chartCheckTopButtons');
+                if (topButtons) {
+                    topButtons.style.display = 'none';
+                }
+                showVitalsTable();
+            };
 
             const fishboneBtn = document.createElement('button');
             fishboneBtn.textContent = '🐟 FISHBONE';
@@ -3598,8 +3617,10 @@ case 'chartcheck':
                 border-right: 1px solid var(--border);
             `;
 
-            // New field structure: NAME, RM, MRN, PRIORITY at top, then system fields
-            const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
+            // New field structure: NAME, RM, MRN, PRIORITY at top, then PROBLEMS, then system fields
+            const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'PROBLEMS', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
+            // Fields that should have checkboxes (PROBLEMS is for HPI, so no checkbox)
+            const checkboxFields = [];
             fieldsToShowChartCheck.forEach(header => {
                 const label = document.createElement('label');
                 label.style.cssText = `
@@ -5165,42 +5186,42 @@ function showImportModal() {
         }
 
         function buildNeuroWithData(neuroMeds) {
-            return `Dx: [No Active Issues]\nExam: [GCS 15 (E4V5M6), pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI]\nMeds: (${neuroMeds.length > 0 ? neuroMeds.join(', ') : 'none'})`;
+            return `Dx: No Active Issues\nExam: GCS 15 (E4V5M6), pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI\nMeds: ${neuroMeds.length > 0 ? neuroMeds.join(', ') : 'none'}`;
         }
 
         function buildPulmWithData(pulmMeds, vitals) {
-            let section = 'Dx: [No Active Issues]\nExam: [CTAB, regular rate';
+            let section = 'Dx: No Active Issues\nExam: CTAB, regular rate';
             if (vitals.o2) section += `, Satting ${vitals.o2}% on `;
             if (vitals.rr) section += `, RR ${vitals.rr}`;
-            section += '] (O2 therapy mode/vent settings)\nMeds: (' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none') + ')';
+            section += ' O2 therapy mode/vent settings\nMeds: ' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none');
             return section;
         }
 
         function buildCVWithData(cvMeds, vitals) {
-            let section = 'Dx: [No Active Issues]\nExam: ';
+            let section = 'Dx: No Active Issues\nExam: ';
             if (vitals.hr) section += `HR ${vitals.hr}, `;
             if (vitals.bp) section += `BP ${vitals.bp}, `;
             if (vitals.map) section += `MAP ${vitals.map}, `;
-            section += '[RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access]\nMeds: (' + (cvMeds.length > 0 ? cvMeds.join(', ') : 'none') + ')';
+            section += 'RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access\nMeds: ' + (cvMeds.length > 0 ? cvMeds.join(', ') : 'none');
             return section;
         }
 
         function buildGIWithData(giMeds) {
-            let section = 'Dx: [No Active Issues]\nExam: [abd soft, non tender non distended, incisions c/d/i, BMx1]\nNutrition: (diet order)\n';
+            let section = 'Dx: No Active Issues\nExam: abd soft, non tender non distended, incisions c/d/i, BMx1\nNutrition: diet order\n';
             const ppxMeds = giMeds.filter(m => m.toLowerCase().includes('pantoprazole') || m.toLowerCase().includes('famotidine') || m.toLowerCase().includes('omeprazole'));
             const bowelMeds = giMeds.filter(m => m.toLowerCase().includes('docusate') || m.toLowerCase().includes('senna') || m.toLowerCase().includes('miralax'));
-            section += `GI ppx: (${ppxMeds.length > 0 ? ppxMeds.join(', ') : 'none'})\n`;
-            section += `Bowel reg: (${bowelMeds.length > 0 ? bowelMeds.join(', ') : 'none'})`;
+            section += `GI ppx: ${ppxMeds.length > 0 ? ppxMeds.join(', ') : 'none'}\n`;
+            section += `Bowel reg: ${bowelMeds.length > 0 ? bowelMeds.join(', ') : 'none'}`;
             return section;
         }
 
         function buildRenalWithData(labs, io, renalMeds) {
-            let section = 'Dx: [No Active Issues]\nExam: ';
+            let section = 'Dx: No Active Issues\nExam: ';
             if (io.uop) section += `UOP ${io.uop} mL/24hr, `;
             if (io.totalIn) section += `In ${io.totalIn}mL, `;
             if (io.totalOut) section += `Out ${io.totalOut}mL, `;
             if (io.balance) section += `Balance ${io.balance > 0 ? '+' : ''}${io.balance}mL`;
-            section += '\nElectrolytes: (';
+            section += '\nElectrolytes: ';
             if (labs.na) section += `Na ${labs.na}, `;
             if (labs.k) section += `K ${labs.k}, `;
             if (labs.cl) section += `Cl ${labs.cl}, `;
@@ -5209,37 +5230,57 @@ function showImportModal() {
             if (labs.cr) section += `Cr ${labs.cr}, `;
             if (labs.ca) section += `Ca ${labs.ca}, `;
             if (labs.mg) section += `Mg ${labs.mg}`;
-            section += ')\nIVF: (IV fluid orders)\nMeds: (' + (renalMeds.length > 0 ? renalMeds.join(', ') : 'none') + ')';
+            section += '\nIVF: IV fluid orders\nMeds: ' + (renalMeds.length > 0 ? renalMeds.join(', ') : 'none');
             return section;
         }
 
         function buildHemeWithData(labs, anticoagMeds) {
-            let section = 'Dx: [No Active Issues]\nLabs: (';
+            let section = 'Dx: No Active Issues\nLabs: ';
             if (labs.hgb) section += `Hgb ${labs.hgb}, `;
             if (labs.plt) section += `PLT ${labs.plt}, `;
             if (labs.pt) section += `PT ${labs.pt}, `;
             if (labs.ptt) section += `PTT ${labs.ptt}, `;
             if (labs.inr) section += `INR ${labs.inr}`;
-            section += ')\nDVT ppx: (' + (anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none') + ')';
+            section += '\nDVT ppx: ' + (anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none');
             return section;
         }
 
         function buildInfectionWithData(labs, antibiotics) {
-            let section = 'Dx: [No Active Issues]\nCx: [none]\nExam: (';
+            let section = 'Dx: No Active Issues\nCx: none\nExam: ';
             if (labs.wbc) section += `WBC ${labs.wbc}, `;
-            section += 'Tmax, T average)\nAbx: (' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none') + ')';
+
+            // Add actual temperature data if available from labData
+            if (labData?.vitals?.temp && labData.vitals.temp.length > 0) {
+                const tempMin = Math.min(...labData.vitals.temp).toFixed(1);
+                const tempMax = Math.max(...labData.vitals.temp).toFixed(1);
+                const tempAvg = (labData.vitals.temp.reduce((a, b) => a + b, 0) / labData.vitals.temp.length).toFixed(1);
+                section += `Tmax: ${tempMax}°C, Tavg: ${tempAvg}°C (${tempMin}-${tempMax})`;
+            } else {
+                section += 'Tmax:   , Tavg:   ';
+            }
+
+            section += '\nAbx: ' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none');
             return section;
         }
 
         function buildEndoWithData(labs, endoMeds) {
-            let section = 'Dx: [No Active Issues]\nBG: (';
-            if (labs.glu) section += `glucose ${labs.glu}`;
-            section += ' blood glucose range)\nMeds: (' + (endoMeds.length > 0 ? endoMeds.join(', ') : 'none') + ')';
+            let section = 'Dx: No Active Issues\nBG: ';
+
+            // Add actual glucose stats if available from labData
+            if (labData?.glucoseStats) {
+                section += `Glucose ${labData.glucoseStats.min}-${labData.glucoseStats.max} (avg ${labData.glucoseStats.avg})`;
+            } else if (labs.glu) {
+                section += `Glucose ${labs.glu}`;
+            } else {
+                section += 'Glucose:   ';
+            }
+
+            section += '\nMeds: ' + (endoMeds.length > 0 ? endoMeds.join(', ') : 'none');
             return section;
         }
 
         function buildSkinWithData() {
-            return 'Dx: [No Active Issues]';
+            return 'Dx: No Active Issues';
         }
 
         // ============ BRACKET MERGING LOGIC ============
@@ -6333,16 +6374,20 @@ function toggleOrdersView() {
         let currentSection = 'Scheduled';
         const medsLines = medsText.split('\n');
         const categorizedMeds = {
-            'N/F': [],
-            'Pain': [],
-            'Abx': [],
-            'AC': [],
+            'GI': [],
+            'NEURO': [],
+            'PULM': [],
+            'CV': [],
+            'RENAL': [],
+            'ENDO': [],
+            'HEME': [],
+            'INFECTION': [],
             'Misc': []
         };
-        
+
         medsLines.forEach(line => {
             const trimmedLine = line.trim();
-            
+
             if (trimmedLine.toLowerCase().includes('scheduled:')) {
                 currentSection = 'Scheduled';
                 return;
@@ -6353,76 +6398,144 @@ function toggleOrdersView() {
                 currentSection = 'Continuous';
                 return;
             }
-            
+
             if (!trimmedLine) return;
-            
+
             const displayLine = currentSection === 'PRN' ? `PRN ${trimmedLine}` : trimmedLine;
             const lineLower = trimmedLine.toLowerCase();
-            
-            if (lineLower.match(/npo|lactated ringers|normal saline|parenteral|sodium chloride|dextrose|infant formula|pediatric|regular diet|clear liquid|renal|cardiac|diabetic|dysphagia|soft|full liquid|bariatric|albumin/i)) {
-                categorizedMeds['N/F'].push(displayLine);
-            } else if (lineLower.match(/oxycodone|hydromorphone|acetaminophen|methocarbamol|baclofen|gabapentin|pregabalin|ibuprofen|ketorolac|tramadol|lidocaine|methadone|fentanyl|morphine|celecoxib|cyclobenzaprine|dexmedetomidine|propofol|midazolam|naproxen/i)) {
-                categorizedMeds['Pain'].push(displayLine);
-            } else if (lineLower.match(/piperacillin|tazobactam|ceftriaxone|vancomycin|amoxicillin|ciprofloxacin|metronidazole|doxycycline|clindamycin|azithromycin|meropenem|levofloxacin|cephalexin|ampicillin|gentamicin|linezolid|ertapenem|trimethoprim|sulfamethoxazole|diflucan|fluconazole|daptomycin|cefepime|norepinephrine|epinephrine|vasopressin|ceftolozane|amphotericin|micafungin|cefazolin|ceftazidime|eravacycline|phenylephrine|dopamine/i)) {
-                categorizedMeds['Abx'].push(displayLine);
-            } else if (lineLower.match(/heparin|enoxaparin|aspirin|clopidogrel|apixaban|warfarin|rivaroxaban|fondaparinux|ticagrelor|dabigatran|prasugrel/i)) {
-                categorizedMeds['AC'].push(displayLine);
-            } else {
+
+            // GI - Nutrition, antiemetics, bowel meds
+            if (lineLower.match(/npo|lactated ringers|normal saline|parenteral|sodium chloride|dextrose|infant formula|pediatric|regular diet|clear liquid|renal|cardiac|diabetic|dysphagia|soft|full liquid|bariatric|albumin|pantoprazole|omeprazole|lansoprazole|esomeprazole|famotidine|ranitidine|ondansetron|zofran|metoclopramide|reglan|prochlorperazine|compazine|promethazine|phenergan|docusate|colace|senna|senokot|bisacodyl|dulcolax|polyethylene|miralax|lactulose|simethicone|mylanta|maalox|tpn|ppn/i)) {
+                categorizedMeds['GI'].push(displayLine);
+            }
+            // NEURO - Pain and sedation
+            else if (lineLower.match(/oxycodone|hydromorphone|acetaminophen|methocarbamol|baclofen|gabapentin|pregabalin|ibuprofen|ketorolac|tramadol|lidocaine|methadone|fentanyl|morphine|celecoxib|cyclobenzaprine|dexmedetomidine|propofol|midazolam|naproxen|dilaudid|tylenol|toradol|neurontin|robaxin|flexeril/i)) {
+                categorizedMeds['NEURO'].push(displayLine);
+            }
+            // PULM - Respiratory meds
+            else if (lineLower.match(/albuterol|ipratropium|budesonide|fluticasone|montelukast|singulair|prednisone|methylprednisolone|dexamethasone|theophylline|aminophylline|acetylcysteine|mucomyst/i)) {
+                categorizedMeds['PULM'].push(displayLine);
+            }
+            // CV - Cardiac, pressors, antihypertensives
+            else if (lineLower.match(/norepinephrine|epinephrine|vasopressin|phenylephrine|dopamine|dobutamine|milrinone|levophed|neo-synephrine|metoprolol|lopressor|carvedilol|coreg|labetalol|atenolol|diltiazem|cardizem|amlodipine|norvasc|hydralazine|apresoline|lisinopril|enalapril|losartan|valsartan|nitroglycerin|nitroprusside|digoxin|amiodarone|adenosine/i)) {
+                categorizedMeds['CV'].push(displayLine);
+            }
+            // RENAL - Diuretics
+            else if (lineLower.match(/furosemide|lasix|bumetanide|torsemide|hydrochlorothiazide|spironolactone/i)) {
+                categorizedMeds['RENAL'].push(displayLine);
+            }
+            // ENDO - Insulin and diabetic meds
+            else if (lineLower.match(/insulin|humalog|novolog|lantus|levemir|basaglar|regular|nph|metformin|glucophage|glipizide|glyburide|glimepiride/i)) {
+                categorizedMeds['ENDO'].push(displayLine);
+            }
+            // HEME - Anticoagulation
+            else if (lineLower.match(/heparin|enoxaparin|aspirin|clopidogrel|apixaban|warfarin|rivaroxaban|fondaparinux|ticagrelor|dabigatran|prasugrel|lovenox|coumadin|eliquis|xarelto|plavix/i)) {
+                categorizedMeds['HEME'].push(displayLine);
+            }
+            // INFECTION - Antibiotics
+            else if (lineLower.match(/piperacillin|tazobactam|ceftriaxone|vancomycin|amoxicillin|ciprofloxacin|metronidazole|doxycycline|clindamycin|azithromycin|meropenem|levofloxacin|cephalexin|ampicillin|gentamicin|linezolid|ertapenem|trimethoprim|sulfamethoxazole|diflucan|fluconazole|daptomycin|cefepime|ceftolozane|amphotericin|micafungin|cefazolin|ceftazidime|eravacycline|zosyn|flagyl|bactrim/i)) {
+                categorizedMeds['INFECTION'].push(displayLine);
+            }
+            else {
                 categorizedMeds['Misc'].push(displayLine);
             }
         });
-        
-        let categorizedHTML = '<div style="background: var(--card-bg); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--primary);"><strong style="color: var(--primary);">Full Orders List:</strong><br><br>';
-        
-        // N/F Category
-        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">N/F (Nutrition/Fluids):</strong><br>';
+
+        let categorizedHTML = '<div style="background: var(--card-bg); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--primary);"><strong style="color: var(--primary);">Full Orders by System:</strong><br><br>';
+
+        // GI Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">GI (Nutrition/Fluids/GI Meds):</strong><br>';
         if (dietMatch) {
             categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">Diet: ${dietMatch[1].trim()}</div>`;
         }
-        if (categorizedMeds['N/F'].length > 0) {
-            categorizedMeds['N/F'].forEach(med => {
+        if (categorizedMeds['GI'].length > 0) {
+            categorizedMeds['GI'].forEach(med => {
+                categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
+            });
+        } else if (!dietMatch) {
+            categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
+        }
+        categorizedHTML += '</div>';
+
+        // NEURO Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">NEURO (Pain/Sedation):</strong><br>';
+        if (categorizedMeds['NEURO'].length > 0) {
+            categorizedMeds['NEURO'].forEach(med => {
                 categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
             });
         } else {
             categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
         }
         categorizedHTML += '</div>';
-        
-        // Pain Category
-        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">Pain:</strong><br>';
-        if (categorizedMeds['Pain'].length > 0) {
-            categorizedMeds['Pain'].forEach(med => {
+
+        // PULM Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">PULM (Respiratory):</strong><br>';
+        if (categorizedMeds['PULM'].length > 0) {
+            categorizedMeds['PULM'].forEach(med => {
                 categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
             });
         } else {
             categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
         }
         categorizedHTML += '</div>';
-        
-        // Antibiotics/Pressors Category
-        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">Antibiotics/Pressors:</strong><br>';
-        if (categorizedMeds['Abx'].length > 0) {
-            categorizedMeds['Abx'].forEach(med => {
+
+        // CV Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">CV (Cardiac/Pressors):</strong><br>';
+        if (categorizedMeds['CV'].length > 0) {
+            categorizedMeds['CV'].forEach(med => {
                 categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
             });
         } else {
             categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
         }
         categorizedHTML += '</div>';
-        
-        // Anticoagulation Category
-        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">Anticoagulation:</strong><br>';
-        if (categorizedMeds['AC'].length > 0) {
-            categorizedMeds['AC'].forEach(med => {
+
+        // RENAL Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">RENAL (Diuretics):</strong><br>';
+        if (categorizedMeds['RENAL'].length > 0) {
+            categorizedMeds['RENAL'].forEach(med => {
                 categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
             });
         } else {
             categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
         }
         categorizedHTML += '</div>';
-        
+
+        // ENDO Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">ENDO (Insulin/Diabetic Meds):</strong><br>';
+        if (categorizedMeds['ENDO'].length > 0) {
+            categorizedMeds['ENDO'].forEach(med => {
+                categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
+            });
+        } else {
+            categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
+        }
+        categorizedHTML += '</div>';
+
+        // HEME Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">HEME (Anticoagulation):</strong><br>';
+        if (categorizedMeds['HEME'].length > 0) {
+            categorizedMeds['HEME'].forEach(med => {
+                categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
+            });
+        } else {
+            categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
+        }
+        categorizedHTML += '</div>';
+
+        // INFECTION Category
+        categorizedHTML += '<div style="margin-bottom: 1rem;"><strong style="color: var(--primary);">INFECTION (Antibiotics):</strong><br>';
+        if (categorizedMeds['INFECTION'].length > 0) {
+            categorizedMeds['INFECTION'].forEach(med => {
+                categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
+            });
+        } else {
+            categorizedHTML += '<div style="color: var(--text-secondary); margin-left: 1rem;">None</div>';
+        }
+        categorizedHTML += '</div>';
+
         // Misc Category
-        categorizedHTML += '<div><strong style="color: var(--primary);">Misc:</strong><br>';
+        categorizedHTML += '<div><strong style="color: var(--primary);">Misc (Other):</strong><br>';
         if (categorizedMeds['Misc'].length > 0) {
             categorizedMeds['Misc'].forEach(med => {
                 categorizedHTML += `<div style="color: var(--primary); margin-left: 1rem;">${med}</div>`;
@@ -6842,8 +6955,15 @@ extractLabValue('Lipase:', 'lipase');
 extractLabValue('Albumin:', 'albumin');
 extractLabValue('Prealbumin:', 'prealbumin');
 
-
-
+// Calculate glucose stats if glucose values exist
+if (data.labs.glu && data.labs.glu.length > 0) {
+    const glucoseValues = data.labs.glu;
+    data.glucoseStats = {
+        min: Math.min(...glucoseValues),
+        max: Math.max(...glucoseValues),
+        avg: Math.round(glucoseValues.reduce((a, b) => a + b, 0) / glucoseValues.length)
+    };
+}
 
             return data;
         }
@@ -10926,12 +11046,22 @@ function refreshViolinDisplay() {
     if (modal) {
         modal.style.display = 'none';
     }
+    // Show the top buttons again when closing the graph modal
+    const topButtons = document.getElementById('chartCheckTopButtons');
+    if (topButtons) {
+        topButtons.style.display = 'flex';
+    }
 }
 
 function closeTableModal() {
     const modal = document.getElementById('tableModal');
     if (modal) {
         modal.style.display = 'none';
+    }
+    // Show the top buttons again when closing the table modal
+    const topButtons = document.getElementById('chartCheckTopButtons');
+    if (topButtons) {
+        topButtons.style.display = 'flex';
     }
 }
 
