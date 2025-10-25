@@ -5817,33 +5817,41 @@ function showImportModal() {
     
 
     closeImportModal();
-    
+
 // Force refresh ALL displays regardless of mode
 setTimeout(() => {
     // Update the textarea field directly
-    const violinField = document.getElementById('field_VIOLIN') || 
+    const violinField = document.getElementById('field_VIOLIN') ||
                        document.querySelector('textarea[id*="VIOLIN"]');
     if (violinField) {
         violinField.value = fishbone;
         autoResizeTextarea(violinField);
     }
-    
+
     // Refresh chart check display if in that mode
     if (currentViewMode === 'chartcheck') {
         refreshViolinDisplay();
+
+        // Ensure violinDisplay is shown with vitals/IO/labs
+        updateViolinDisplay();
+
+        // Make sure the display is visible
+        const violinDisplay = document.getElementById('violinDisplay');
+        if (violinDisplay) {
+            violinDisplay.style.display = 'block';
+        }
+        // Hide the textarea to show the display
+        if (violinField) {
+            violinField.style.display = 'none';
+        }
     }
-    
+
     // Also try to refresh basic mode fishbone
     const fishboneContainer = document.getElementById('fishboneDisplay');
     if (fishboneContainer) {
         showFishboneInline();
     }
-}, 100);
-
-// Update the fishbone display
-    setTimeout(() => {
-        updateViolinDisplay();
-    }, 100);
+}, 150);
 
 			
 }
