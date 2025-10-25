@@ -11071,22 +11071,17 @@ function updateChartCheckProgress() {
 let violinEditMode = false;
 
 function toggleViolinMode() {
-    violinEditMode = !violinEditMode;
+    // ALWAYS show both - never hide anything
     const violinTextarea = document.getElementById('field_VIOLIN');
     const violinDisplay = document.getElementById('violinDisplay');
     const btn = document.getElementById('violinToggleBtn');
-    
-    if (violinEditMode) {
-        // Switch to edit mode
-        if (violinDisplay) violinDisplay.style.display = 'none';
-        if (violinTextarea) violinTextarea.style.display = 'block';
-        btn.textContent = '📝 Back to View';
-    } else {
-        // Switch to view mode
-        if (violinDisplay) violinDisplay.style.display = 'block';
-        if (violinTextarea) violinTextarea.style.display = 'none';
-        btn.textContent = '🐟 Fishbone';
-    }
+
+    // Keep both visible at all times
+    if (violinDisplay) violinDisplay.style.display = 'block';
+    if (violinTextarea) violinTextarea.style.display = 'block';
+
+    // Update violin display to refresh content
+    updateViolinDisplay();
 }
 
 
@@ -11446,26 +11441,15 @@ if (_ioData) {
     }
   }
 
-  // Check if we have any content to display
-  const hasContent = violinDisplay.children.length > 0;
+  // ALWAYS show the violin display, NEVER hide it
+  violinDisplay.style.display = 'block';
 
-  // Only show violinDisplay and hide textarea if we have actual content
-  if (hasContent) {
-    violinDisplay.style.display = 'block';
-    const violinTextarea = document.getElementById('field_VIOLIN');
-    if (violinTextarea) violinTextarea.style.display = 'none';
-    window.violinEditMode = false;
-  } else {
-    // No content to display, keep textarea visible
-    violinDisplay.style.display = 'none';
-    const violinTextarea = document.getElementById('field_VIOLIN');
-    if (violinTextarea) violinTextarea.style.display = 'block';
-  }
+  // NEVER hide the textarea - keep it always visible
+  const violinTextarea = document.getElementById('field_VIOLIN');
+  if (violinTextarea) violinTextarea.style.display = 'block';
+
   } catch (error) {
     console.error('Error in updateViolinDisplay:', error);
-    // On error, ensure textarea remains visible
-    const violinTextarea = document.getElementById('field_VIOLIN');
-    if (violinTextarea) violinTextarea.style.display = 'block';
   }
 }
 
