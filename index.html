@@ -5471,9 +5471,11 @@ setTimeout(() => {
     }
 }, 100);
 
-// Update the fishbone display
+// Update the fishbone display (only in chart check mode)
     setTimeout(() => {
-        updateViolinDisplay();
+        if (currentViewMode === 'chartcheck') {
+            updateViolinDisplay();
+        }
     }, 100);
 
 			
@@ -11305,13 +11307,14 @@ function resolveKeys(preferredKeys, obj) {
 
 // ========= MAIN UPDATE FUNCTION =========
 function updateViolinDisplay(ctx = {}) {
-  const _patientData = ctx.patientData || patientData;
-  const _currentIdx = Number.isInteger(ctx.currentPatientIndex) ? ctx.currentPatientIndex : currentPatientIndex;
-  const _labData = ctx.labData || labData;
-  const _lastImportedData = ctx.lastImportedData || lastImportedData;
+  try {
+    const _patientData = ctx.patientData || patientData;
+    const _currentIdx = Number.isInteger(ctx.currentPatientIndex) ? ctx.currentPatientIndex : currentPatientIndex;
+    const _labData = ctx.labData || labData;
+    const _lastImportedData = ctx.lastImportedData || lastImportedData;
 
-  if (!_patientData || _currentIdx < 0 || !_patientData[_currentIdx]) return;
-  const patient = _patientData[_currentIdx];
+    if (!_patientData || _currentIdx < 0 || !_patientData[_currentIdx]) return;
+    const patient = _patientData[_currentIdx];
 
   // Extract I/O data
   const _ioData = _lastImportedData ? extractIntakeOutputData(_lastImportedData) : null;
@@ -11443,11 +11446,27 @@ if (_ioData) {
     }
   }
 
-  violinDisplay.style.display = 'block';
+  // Check if we have any content to display
+  const hasContent = violinDisplay.children.length > 0;
 
-  const violinTextarea = document.getElementById('field_VIOLIN');
-  if (violinTextarea) violinTextarea.style.display = 'none';
-  window.violinEditMode = false;
+  // Only show violinDisplay and hide textarea if we have actual content
+  if (hasContent) {
+    violinDisplay.style.display = 'block';
+    const violinTextarea = document.getElementById('field_VIOLIN');
+    if (violinTextarea) violinTextarea.style.display = 'none';
+    window.violinEditMode = false;
+  } else {
+    // No content to display, keep textarea visible
+    violinDisplay.style.display = 'none';
+    const violinTextarea = document.getElementById('field_VIOLIN');
+    if (violinTextarea) violinTextarea.style.display = 'block';
+  }
+  } catch (error) {
+    console.error('Error in updateViolinDisplay:', error);
+    // On error, ensure textarea remains visible
+    const violinTextarea = document.getElementById('field_VIOLIN');
+    if (violinTextarea) violinTextarea.style.display = 'block';
+  }
 }
 
 
