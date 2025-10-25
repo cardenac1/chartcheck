@@ -5071,7 +5071,7 @@ function showImportModal() {
             systems.NEURO = buildNeuroWithData(meds.neuro);
             systems.PULM = buildPulmWithData(meds.pulm, vitals);
             systems.CV = buildCVWithData(meds.cv, vitals);
-            systems.GI = buildGIWithData(meds.gi);
+            systems.GI = buildGIWithData(meds.gi, meds.diet);
             systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal);
             systems.HEME = buildHemeWithData(formattedLabs, meds.anticoag);
             systems.INFECTION = buildInfectionWithData(formattedLabs, meds.antibiotics);
@@ -5128,32 +5128,237 @@ function showImportModal() {
         }
 
         function extractMedsBySystem(text) {
-            const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: []};
+            const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: [], diet: []};
 
-            const patterns = {
-                neuro: /fentanyl|morphine|hydromorphone|oxycodone|gabapentin|pregabalin|levetiracetam|propofol|midazolam|lorazepam|dexmedetomidine/gi,
-                pulm: /albuterol|ipratropium|duoneb|budesonide|fluticasone/gi,
-                cv: /metoprolol|carvedilol|labetalol|lisinopril|losartan|amlodipine|diltiazem|hydralazine|furosemide|norepinephrine|epinephrine|vasopressin|amiodarone|atorvastatin|rosuvastatin/gi,
-                gi: /ondansetron|pantoprazole|omeprazole|famotidine|docusate|senna|bisacodyl|miralax|metoclopramide/gi,
-                anticoag: /heparin|enoxaparin|warfarin|apixaban|rivaroxaban|aspirin|clopidogrel/gi,
-                antibiotics: /vancomycin|cefepime|piperacillin|tazobactam|meropenem|ceftriaxone|levofloxacin|metronidazole|daptomycin|linezolid|fluconazole/gi,
-                endo: /insulin|lispro|aspart|glargine|levothyroxine/gi
-            };
+            // Helper: Extract diet orders
+            const dietMatch = text.match(/DIET ORDER:\s*([^\n]+)/i);
+            if (dietMatch && dietMatch[1]) {
+                meds.diet.push(dietMatch[1].trim());
+            }
 
-            const medSection = text.match(/Medications.*?(?=(?:\n\n|DIET ORDER:|LABS:|$))/is);
-            if (medSection) {
-                const medText = medSection[0];
-                for (const [system, pattern] of Object.entries(patterns)) {
-                    let match;
-                    while ((match = pattern.exec(medText)) !== null) {
-                        const medName = match[0];
-                        if (!meds[system].includes(medName.toLowerCase())) {
-                            meds[system].push(medName);
-                        }
-                    }
+            // Extract medication section
+            const medSection = text.match(/Medications.*?\(\d+\)\s*Active([\s\S]*?)(?=(?:\n\n)?(?:DIET ORDER:|CONSULTATION:|PROCEDURE:|IMAGING:|LABS:|$))/i);
+            if (!medSection) return meds;
+
+            const medText = medSection[1];
+            const lines = medText.split('\n').filter(line => line.trim());
+
+            let isPRN = false;
+
+            for (let line of lines) {
+                // Check for section headers
+                if (line.toLowerCase().includes('scheduled:')) {
+                    isPRN = false;
+                    continue;
+                } else if (line.toLowerCase().includes('prn:')) {
+                    isPRN = true;
+                    continue;
+                } else if (line.toLowerCase().includes('continuous:')) {
+                    isPRN = false;
+                    continue;
+                }
+
+                if (!line.trim()) continue;
+
+                // Parse the medication line
+                const parsedMed = parseMedicationLine(line, isPRN);
+                if (parsedMed) {
+                    categorizeParsedMed(parsedMed, meds);
                 }
             }
+
             return meds;
+        }
+
+        // Helper function to parse a medication line with dose/route/frequency
+        function parseMedicationLine(line, isPRN) {
+            // Look for double space separator between drug name and dose info
+            const doubleSeparator = line.indexOf('  ');
+            if (doubleSeparator === -1) return null;
+
+            const beforeSeparator = line.substring(0, doubleSeparator);
+            const afterSeparator = line.substring(doubleSeparator + 2);
+
+            // Extract drug name (before any dosage info)
+            const drugName = extractDrugName(beforeSeparator);
+
+            // Split the after-separator part by commas
+            const parts = afterSeparator.split(',').map(p => p.trim());
+
+            let dose = parts[0] || '';
+            let route = parts[1] || '';
+            let frequency = parts[2] || '';
+
+            // Clean and abbreviate
+            dose = cleanDose(dose, beforeSeparator);
+            route = abbreviateRoute(route);
+            frequency = abbreviateFrequency(frequency);
+
+            return {
+                name: drugName,
+                dose: dose,
+                route: route,
+                frequency: frequency,
+                isPRN: isPRN,
+                formatted: formatMedAbbrev(drugName, dose, route, frequency, isPRN)
+            };
+        }
+
+        function extractDrugName(text) {
+            const formulationMarkers = /\d+\s*(mg|mcg|unit\(s\)|%|mL|g\b)/i;
+            const match = text.match(formulationMarkers);
+
+            let drugName;
+            if (match) {
+                drugName = text.substring(0, match.index).trim();
+            } else {
+                drugName = text.trim();
+            }
+
+            return drugName.replace(/\s*\([^)]*\)/g, '').trim();
+        }
+
+        function cleanDose(dose, beforeSeparator) {
+            // Check for combination drug pattern
+            const comboDoseMatch = beforeSeparator ? beforeSeparator.match(/(\d+)\s*mg-(\d+)\s*mg/i) : null;
+            if (comboDoseMatch) {
+                return `${comboDoseMatch[1]}-${comboDoseMatch[2]}mg`;
+            }
+
+            // Regular single medication dose
+            const match = dose.match(/^([\d,\.]+)\s*(mg|mcg|g|unit\(s\)|units?|mL|mEq|intl units)/i);
+            if (match) {
+                let value = match[1].replace(',', '');
+                let unit = match[2];
+
+                if (unit.toLowerCase() === 'mg' && parseFloat(value) >= 1000) {
+                    value = parseFloat(value) / 1000;
+                    unit = 'g';
+                }
+
+                unit = unit.replace('unit(s)', 'u').replace('units', 'u').replace('intl units', 'IU');
+
+                return `${value}${unit}`;
+            }
+
+            return dose.split(/\s+/)[0];
+        }
+
+        function abbreviateRoute(route) {
+            if (route.toLowerCase().includes('iv')) return 'IV';
+
+            const routeMap = {
+                'Oral': 'PO',
+                'Subcutaneous': 'SC',
+                'Intramuscular': 'IM',
+                'Per Rectum': 'PR',
+                'Transdermal': 'TD',
+                'Inhalation': 'INH',
+                'NEB': 'NEB',
+                'Nasal': 'IN',
+                'Eye-Both': 'OU',
+                'Eye-Left': 'OS',
+                'Eye-Right': 'OD',
+                'Swish and Swallow': 'S&S'
+            };
+
+            return routeMap[route] || route;
+        }
+
+        function abbreviateFrequency(freq) {
+            const hourMatch = freq.match(/every\s+(\d+)\s+hours?/i);
+            if (hourMatch) {
+                return `Q${hourMatch[1]}`;
+            }
+
+            const freqMap = {
+                'Daily': 'QD',
+                'Once': 'x1',
+                '2 times a day': 'BID',
+                '2 times per day': 'BID',
+                '3 times a day': 'TID',
+                '3 times per day': 'TID',
+                '4 times a day': 'QID',
+                '4 times per day': 'QID',
+                '6 times per day': 'Q4',
+                'every 7 days': 'Q7D',
+                'every week': 'Q7D',
+                'every 48 hours': 'Q48',
+                'every evening': 'QPM',
+                'every morning': 'QAM',
+                'As Directed': 'PRN',
+                'Monday and Thursday': 'Mon/Thu',
+                'On Call': 'on call'
+            };
+
+            for (let [key, value] of Object.entries(freqMap)) {
+                if (freq.includes(key)) {
+                    return value;
+                }
+            }
+
+            return freq;
+        }
+
+        function formatMedAbbrev(name, dose, route, frequency, isPRN) {
+            let result = name;
+            if (dose) result += ` ${dose}`;
+            if (route) result += ` ${route}`;
+            if (frequency) result += ` ${frequency}`;
+            if (isPRN) result += ' PRN';
+            return result;
+        }
+
+        function categorizeParsedMed(med, meds) {
+            const nameLower = med.name.toLowerCase();
+
+            // NEURO - Pain and sedation
+            if (nameLower.match(/fentanyl|morphine|hydromorphone|oxycodone|gabapentin|pregabalin|levetiracetam|propofol|midazolam|lorazepam|dexmedetomidine|acetaminophen|tylenol|ketorolac|toradol|dilaudid|tramadol/i)) {
+                meds.neuro.push(med.formatted);
+                return;
+            }
+
+            // PULM - Respiratory
+            if (nameLower.match(/albuterol|ipratropium|duoneb|budesonide|fluticasone|prednisone|methylprednisolone|dexamethasone/i)) {
+                meds.pulm.push(med.formatted);
+                return;
+            }
+
+            // CV - Cardiac and pressors
+            if (nameLower.match(/metoprolol|carvedilol|labetalol|lisinopril|losartan|amlodipine|diltiazem|hydralazine|furosemide|norepinephrine|epinephrine|vasopressin|amiodarone|atorvastatin|rosuvastatin|nitroglycerin|digoxin/i)) {
+                meds.cv.push(med.formatted);
+                return;
+            }
+
+            // GI - GI medications
+            if (nameLower.match(/ondansetron|pantoprazole|omeprazole|famotidine|docusate|senna|bisacodyl|miralax|metoclopramide|zofran|protonix|colace|reglan/i)) {
+                meds.gi.push(med.formatted);
+                return;
+            }
+
+            // RENAL - Diuretics
+            if (nameLower.match(/furosemide|lasix|bumetanide|torsemide|spironolactone/i) && !meds.cv.includes(med.formatted)) {
+                meds.renal.push(med.formatted);
+                return;
+            }
+
+            // ANTICOAG - Anticoagulation
+            if (nameLower.match(/heparin|enoxaparin|warfarin|apixaban|rivaroxaban|aspirin|clopidogrel|lovenox|coumadin|eliquis|plavix/i)) {
+                meds.anticoag.push(med.formatted);
+                return;
+            }
+
+            // ANTIBIOTICS - Infection
+            if (nameLower.match(/vancomycin|cefepime|piperacillin|tazobactam|meropenem|ceftriaxone|levofloxacin|metronidazole|daptomycin|linezolid|fluconazole|zosyn|flagyl|cipro/i)) {
+                meds.antibiotics.push(med.formatted);
+                return;
+            }
+
+            // ENDO - Insulin and diabetic meds
+            if (nameLower.match(/insulin|lispro|aspart|glargine|levothyroxine|lantus|humalog|novolog|metformin/i)) {
+                meds.endo.push(med.formatted);
+                return;
+            }
         }
 
         function extractVitalsForSystems(text) {
@@ -5206,8 +5411,9 @@ function showImportModal() {
             return section;
         }
 
-        function buildGIWithData(giMeds) {
-            let section = 'Dx: No Active Issues\nExam: abd soft, non tender non distended, incisions c/d/i, BMx1\nNutrition: diet order\n';
+        function buildGIWithData(giMeds, diet) {
+            let section = 'Dx: No Active Issues\nExam: abd soft, non tender non distended, incisions c/d/i, BMx1\n';
+            section += `Nutrition: ${diet && diet.length > 0 ? diet.join(', ') : 'diet order'}\n`;
             const ppxMeds = giMeds.filter(m => m.toLowerCase().includes('pantoprazole') || m.toLowerCase().includes('famotidine') || m.toLowerCase().includes('omeprazole'));
             const bowelMeds = giMeds.filter(m => m.toLowerCase().includes('docusate') || m.toLowerCase().includes('senna') || m.toLowerCase().includes('miralax'));
             section += `GI ppx: ${ppxMeds.length > 0 ? ppxMeds.join(', ') : 'none'}\n`;
