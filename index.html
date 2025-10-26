@@ -4076,23 +4076,37 @@ if (currentViewMode === 'consult' && CONSULT_MODE_LABELS[header]) {
 let input;
 if (header === 'Name' || header === 'RM' || header === 'MRN' || header === 'Att' || header === 'Priority') {
     input = document.createElement('input');
-}
-else if (header === 'VIOLIN') {
-    input = document.createElement('textarea');
-    // Remove contentEditable and inline styles - let CSS handle it
+    input.type = 'text';
+    input.style.cssText = `
+        width: 100%;
+        padding: 0.5rem;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 0.25rem;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        margin-bottom: 0.75rem;
+    `;
 }
 else {
     input = document.createElement('textarea');
+    input.style.cssText = `
+        width: 100%;
+        min-height: 100px;
+        padding: 0.5rem;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 0.25rem;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        font-family: inherit;
+        resize: vertical;
+        margin-bottom: 0.75rem;
+        display: block;
+    `;
 }
 
-
-
-                    
-                if (input.tagName === 'INPUT') {
-                    input.type = 'text';
-                }
-                
-                input.id = `field_${header.replace(/\s+/g, '_')}`;
+input.id = `field_${header.replace(/\s+/g, '_')}`;
 
 
 // Set initial content
@@ -8238,7 +8252,9 @@ function extractOrders(text) {
         'naproxen': { abbr: 'nap', category: 'Pain' },
         'celecoxib': { abbr: 'celebrex', category: 'Pain' },
         'dexmedetomidine': { abbr: 'precedex', category: 'Pain' },
-        
+        'propofol': { abbr: 'prop', category: 'Pain' },
+        'midazolam': { abbr: 'versed', category: 'Pain' },
+
         // Antibiotics
         'vancomycin': { abbr: 'vanco', category: 'Abx' },
         'piperacillin': { abbr: 'zosyn', category: 'Abx' },
@@ -8261,15 +8277,17 @@ function extractOrders(text) {
         'sulfamethoxazole': { abbr: 'bactrim', category: 'Abx' },
         'linezolid': { abbr: 'linezolid', category: 'Abx' },
 	'ertapenem': { abbr: 'ertapenem', category: 'Abx' },
-	'ceftriaxone': { abbr: 'ceftriaxone', category: 'Abx' },
-        
-        // Pressors
+
+        // Pressors & Cardiac Medications
         'norepinephrine': { abbr: 'levo', category: 'Abx' },
         'epinephrine': { abbr: 'epi', category: 'Abx' },
         'vasopressin': { abbr: 'vaso', category: 'Abx' },
         'phenylephrine': { abbr: 'neo', category: 'Abx' },
         'dopamine': { abbr: 'dopa', category: 'Abx' },
-        
+        'amiodarone': { abbr: 'amio', category: 'Abx' },
+        'dobutamine': { abbr: 'dobut', category: 'Abx' },
+        'milrinone': { abbr: 'milri', category: 'Abx' },
+
         // Anticoagulation
         'heparin': { abbr: 'hep', category: 'AC' },
         'enoxaparin': { abbr: 'L', category: 'AC' },
@@ -8280,7 +8298,7 @@ function extractOrders(text) {
         'apixaban': { abbr: 'eliquis', category: 'AC' },
         'rivaroxaban': { abbr: 'xarelto', category: 'AC' },
         'fondaparinux': { abbr: 'arixtra', category: 'AC' },
-        
+
         // Fluids
         'lactated ringers': { abbr: 'LR', category: 'N/F' },
         'normal saline': { abbr: 'NS', category: 'N/F' },
@@ -8498,52 +8516,87 @@ function extractDoseInfo(line) {
     
     medLines.forEach(line => {
         const lineLower = line.toLowerCase();
-        
-        // Skip non-medication lines
-        if (lineLower.includes('scheduled:') || 
-            lineLower.includes('prn:') || 
+
+        // Skip header lines but continue processing
+        if (lineLower.includes('scheduled:') ||
+            lineLower.includes('prn:') ||
             lineLower.includes('continuous:') ||
             line.trim().length < 3) {
             return;
         }
-        
+
         // Find matching drug
         let matched = false;
         for (const [drug, info] of Object.entries(drugAbbreviations)) {
             if (lineLower.includes(drug)) {
                 const { dose, freq } = extractDoseInfo(line);
-                
+
+                // Detect route
+                let route = '';
+                if (lineLower.includes('po ') || lineLower.includes('oral') || lineLower.includes('by mouth')) {
+                    route = 'PO';
+                } else if (lineLower.includes('iv ') || lineLower.includes('intravenous')) {
+                    route = 'IV';
+                } else if (lineLower.includes('im ') || lineLower.includes('intramuscular')) {
+                    route = 'IM';
+                } else if (lineLower.includes('sq ') || lineLower.includes('subcutaneous') || lineLower.includes('subcut')) {
+                    route = 'SQ';
+                }
+
+                // Detect PRN
+                let isPRN = lineLower.includes('prn') || lineLower.includes('as needed');
+
+                // Detect continuous infusion
+                let isContinuous = lineLower.includes('continuous') ||
+                                   lineLower.includes('infusion') ||
+                                   lineLower.includes('ml/hr');
+
                 // Build abbreviation
                 let abbr = info.abbr;
-                if (dose) {
-                    // Special formatting for common doses
-                    if (drug === 'acetaminophen' && dose === '975') abbr = 't975';
-                    else if (drug === 'acetaminophen' && dose === '1000') abbr = 'T1g';
-                    else if (dose && freq) abbr = `${info.abbr}${dose}${freq}`;
-                    else if (dose) abbr = `${info.abbr}${dose}`;
+
+                // Special formatting for acetaminophen
+                if (drug === 'acetaminophen' || drug === 'tylenol') {
+                    if (dose === '975') {
+                        abbr = 'T975';
+                    } else if (dose === '1000') {
+                        abbr = 'T1000';
+                    } else if (dose) {
+                        abbr = `T${dose}`;
+                    }
+                } else if (isContinuous) {
+                    // For continuous infusions, use "gtt" instead of dose/freq
+                    abbr = `${info.abbr} gtt`;
+                } else {
+                    // Standard formatting for other meds
+                    if (dose && freq) {
+                        abbr = `${info.abbr}${dose} ${freq}`;
+                    } else if (dose) {
+                        abbr = `${info.abbr}${dose}`;
+                    } else if (freq) {
+                        abbr = `${info.abbr} ${freq}`;
+                    }
                 }
-                if (freq && !dose) abbr = `${info.abbr}${freq}`;
-                
-              // Special cases for IV medications
-		if (lineLower.includes('iv ') || lineLower.includes('intravenous')) {
-		    abbr += 'IV';
-		}
-		
-		// Add asterisks around IV pain medications
-		if (info.category === 'Pain' && abbr.includes('IV')) {
-		    abbr = `*${abbr}*`;
-		}
-		
-		if (!processedMeds.has(abbr)) {
-		    orders[info.category].push(abbr);
-		    processedMeds.add(abbr);
-		}
 
+                // Add route if present
+                if (route) {
+                    abbr += ` ${route}`;
+                }
 
+                // Add PRN if present
+                if (isPRN) {
+                    abbr += ' PRN';
+                }
 
+                // Add asterisks around IV pain medications
+                if (info.category === 'Pain' && route === 'IV') {
+                    abbr = `*${abbr}*`;
+                }
 
+                if (!processedMeds.has(abbr)) {
+                    orders[info.category].push(abbr);
+                    processedMeds.add(abbr);
+                }
 
-		    
                 matched = true;
                 break;
             }
@@ -11143,15 +11196,17 @@ function updateChartCheckProgress() {
 let violinEditMode = false;
 
 function toggleViolinMode() {
-    const violinTextarea = document.getElementById('field_VIOLIN');
     const violinDisplay = document.getElementById('violinDisplay');
 
-    // ALWAYS show violin display, ALWAYS hide violin textarea
-    if (violinDisplay) violinDisplay.style.display = 'block';
-    if (violinTextarea) violinTextarea.style.display = 'none';
-
-    // Update violin display to refresh content
-    updateViolinDisplay();
+    // Toggle the fishbone display visibility
+    if (violinDisplay) {
+        if (violinDisplay.style.display === 'none') {
+            violinDisplay.style.display = 'block';
+            updateViolinDisplay();
+        } else {
+            violinDisplay.style.display = 'none';
+        }
+    }
 }
 
 
