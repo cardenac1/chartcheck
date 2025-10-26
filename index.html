@@ -3622,7 +3622,7 @@ case 'chartcheck':
             const checkboxFields = ['NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
 
             // New field structure: NAME, RM, MRN, PRIORITY at top, then system fields
-            const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
+            const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'ORDERS'];
             fieldsToShowChartCheck.forEach(header => {
                 const label = document.createElement('label');
                 label.style.cssText = `
@@ -5099,8 +5099,8 @@ function showImportModal() {
             systems.NEURO = buildNeuroWithData(meds.neuro);
             systems.PULM = buildPulmWithData(meds.pulm, vitals);
             systems.CV = buildCVWithData(meds.cv, vitals);
-            systems.GI = buildGIWithData(meds.gi);
-            systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal);
+            systems.GI = buildGIWithData(meds.gi, meds.diet);
+            systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal, meds.ivf);
             systems.HEME = buildHemeWithData(formattedLabs, meds.anticoag);
             systems.INFECTION = buildInfectionWithData(formattedLabs, meds.antibiotics);
             systems.ENDO = buildEndoWithData(formattedLabs, meds.endo);
@@ -5156,7 +5156,7 @@ function showImportModal() {
         }
 
         function extractMedsBySystem(text) {
-            const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: []};
+            const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: [], diet: [], ivf: []};
 
             const patterns = {
                 neuro: /fentanyl|morphine|hydromorphone|oxycodone|gabapentin|pregabalin|levetiracetam|propofol|midazolam|lorazepam|dexmedetomidine/gi,
@@ -5168,19 +5168,41 @@ function showImportModal() {
                 endo: /insulin|lispro|aspart|glargine|levothyroxine/gi
             };
 
-            const medSection = text.match(/Medications.*?(?=(?:\n\n|DIET ORDER:|LABS:|$))/is);
+            // Extract medications section with doses
+            const medSection = text.match(/Medications.*?(?=(?:\n\n|DIET ORDER:|IV FLUIDS:|LABS:|$))/is);
             if (medSection) {
                 const medText = medSection[0];
-                for (const [system, pattern] of Object.entries(patterns)) {
-                    let match;
-                    while ((match = pattern.exec(medText)) !== null) {
-                        const medName = match[0];
-                        if (!meds[system].includes(medName.toLowerCase())) {
-                            meds[system].push(medName);
+                const medLines = medText.split('\n');
+
+                for (const line of medLines) {
+                    if (!line.trim() || line.match(/^Medications/i)) continue;
+
+                    for (const [system, pattern] of Object.entries(patterns)) {
+                        if (pattern.test(line)) {
+                            // Extract full line with dose information
+                            const cleanLine = line.trim();
+                            if (!meds[system].some(m => m.toLowerCase() === cleanLine.toLowerCase())) {
+                                meds[system].push(cleanLine);
+                            }
+                            pattern.lastIndex = 0; // Reset regex
                         }
                     }
                 }
             }
+
+            // Extract diet orders
+            const dietMatch = text.match(/DIET ORDER:?\s*(.+?)(?=\n(?:[A-Z][A-Z\s]+:|$))/is);
+            if (dietMatch) {
+                meds.diet = [dietMatch[1].trim()];
+            }
+
+            // Extract IV fluids
+            const ivfMatch = text.match(/IV FLUIDS:?\s*(.+?)(?=\n(?:[A-Z][A-Z\s]+:|$))/is);
+            if (ivfMatch) {
+                const ivfLines = ivfMatch[1].split('\n').map(l => l.trim()).filter(l => l);
+                meds.ivf = ivfLines;
+            }
+
             return meds;
         }
 
@@ -5214,42 +5236,43 @@ function showImportModal() {
         }
 
         function buildNeuroWithData(neuroMeds) {
-            return `Dx: [No Active Issues]\nExam: [GCS 15 (E4V5M6), pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI]\nMeds: (${neuroMeds.length > 0 ? neuroMeds.join(', ') : 'none'})`;
+            return `Dx: No Active Issues\nExam: GCS 15 E4V5M6, pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI\nMeds: ${neuroMeds.length > 0 ? neuroMeds.join(', ') : 'none'}`;
         }
 
         function buildPulmWithData(pulmMeds, vitals) {
-            let section = 'Dx: [No Active Issues]\nExam: [CTAB, regular rate';
+            let section = 'Dx: No Active Issues\nExam: CTAB, regular rate';
             if (vitals.o2) section += `, Satting ${vitals.o2}% on `;
             if (vitals.rr) section += `, RR ${vitals.rr}`;
-            section += '] (O2 therapy mode/vent settings)\nMeds: (' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none') + ')';
+            section += ' O2 therapy mode/vent settings\nMeds: ' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none');
             return section;
         }
 
         function buildCVWithData(cvMeds, vitals) {
-            let section = 'Dx: [No Active Issues]\nExam: ';
+            let section = 'Dx: No Active Issues\nExam: ';
             if (vitals.hr) section += `HR ${vitals.hr}, `;
             if (vitals.bp) section += `BP ${vitals.bp}, `;
             if (vitals.map) section += `MAP ${vitals.map}, `;
-            section += '[RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access]\nMeds: (' + (cvMeds.length > 0 ? cvMeds.join(', ') : 'none') + ')';
+            section += 'RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access\nMeds: ' + (cvMeds.length > 0 ? cvMeds.join(', ') : 'none');
             return section;
         }
 
-        function buildGIWithData(giMeds) {
-            let section = 'Dx: [No Active Issues]\nExam: [abd soft, non tender non distended, incisions c/d/i, BMx1]\nNutrition: (diet order)\n';
+        function buildGIWithData(giMeds, diet) {
+            let section = 'Dx: No Active Issues\nExam: abd soft, non tender non distended, incisions c/d/i, BMx1\n';
+            section += `Nutrition: ${diet && diet.length > 0 ? diet.join(', ') : 'diet order'}\n`;
             const ppxMeds = giMeds.filter(m => m.toLowerCase().includes('pantoprazole') || m.toLowerCase().includes('famotidine') || m.toLowerCase().includes('omeprazole'));
             const bowelMeds = giMeds.filter(m => m.toLowerCase().includes('docusate') || m.toLowerCase().includes('senna') || m.toLowerCase().includes('miralax'));
-            section += `GI ppx: (${ppxMeds.length > 0 ? ppxMeds.join(', ') : 'none'})\n`;
-            section += `Bowel reg: (${bowelMeds.length > 0 ? bowelMeds.join(', ') : 'none'})`;
+            section += `GI ppx: ${ppxMeds.length > 0 ? ppxMeds.join(', ') : 'none'}\n`;
+            section += `Bowel reg: ${bowelMeds.length > 0 ? bowelMeds.join(', ') : 'none'}`;
             return section;
         }
 
-        function buildRenalWithData(labs, io, renalMeds) {
-            let section = 'Dx: [No Active Issues]\nExam: ';
+        function buildRenalWithData(labs, io, renalMeds, ivf) {
+            let section = 'Dx: No Active Issues\nExam: ';
             if (io.uop) section += `UOP ${io.uop} mL/24hr, `;
             if (io.totalIn) section += `In ${io.totalIn}mL, `;
             if (io.totalOut) section += `Out ${io.totalOut}mL, `;
             if (io.balance) section += `Balance ${io.balance > 0 ? '+' : ''}${io.balance}mL`;
-            section += '\nElectrolytes: (';
+            section += '\nElectrolytes: ';
             if (labs.na) section += `Na ${labs.na}, `;
             if (labs.k) section += `K ${labs.k}, `;
             if (labs.cl) section += `Cl ${labs.cl}, `;
@@ -5258,37 +5281,37 @@ function showImportModal() {
             if (labs.cr) section += `Cr ${labs.cr}, `;
             if (labs.ca) section += `Ca ${labs.ca}, `;
             if (labs.mg) section += `Mg ${labs.mg}`;
-            section += ')\nIVF: (IV fluid orders)\nMeds: (' + (renalMeds.length > 0 ? renalMeds.join(', ') : 'none') + ')';
+            section += `\nIVF: ${ivf && ivf.length > 0 ? ivf.join(', ') : 'none'}\nMeds: ${renalMeds.length > 0 ? renalMeds.join(', ') : 'none'}`;
             return section;
         }
 
         function buildHemeWithData(labs, anticoagMeds) {
-            let section = 'Dx: [No Active Issues]\nLabs: (';
+            let section = 'Dx: No Active Issues\nLabs: ';
             if (labs.hgb) section += `Hgb ${labs.hgb}, `;
             if (labs.plt) section += `PLT ${labs.plt}, `;
             if (labs.pt) section += `PT ${labs.pt}, `;
             if (labs.ptt) section += `PTT ${labs.ptt}, `;
             if (labs.inr) section += `INR ${labs.inr}`;
-            section += ')\nDVT ppx: (' + (anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none') + ')';
+            section += '\nDVT ppx: ' + (anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none');
             return section;
         }
 
         function buildInfectionWithData(labs, antibiotics) {
-            let section = 'Dx: [No Active Issues]\nCx: [none]\nExam: (';
+            let section = 'Dx: No Active Issues\nCx: none\nExam: ';
             if (labs.wbc) section += `WBC ${labs.wbc}, `;
-            section += 'Tmax, T average)\nAbx: (' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none') + ')';
+            section += 'Tmax, T average\nAbx: ' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none');
             return section;
         }
 
         function buildEndoWithData(labs, endoMeds) {
-            let section = 'Dx: [No Active Issues]\nBG: (';
+            let section = 'Dx: No Active Issues\nBG: ';
             if (labs.glu) section += `glucose ${labs.glu}`;
-            section += ' blood glucose range)\nMeds: (' + (endoMeds.length > 0 ? endoMeds.join(', ') : 'none') + ')';
+            section += ' blood glucose range\nMeds: ' + (endoMeds.length > 0 ? endoMeds.join(', ') : 'none');
             return section;
         }
 
         function buildSkinWithData() {
-            return 'Dx: [No Active Issues]\nLabs Q: [ ]';
+            return 'Dx: No Active Issues\nLabs Q:';
         }
 
         // ============ BRACKET MERGING LOGIC ============
