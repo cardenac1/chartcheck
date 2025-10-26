@@ -3494,7 +3494,7 @@ function switchView(mode) {
     
     switch(mode) {
         case 'basic':
-    fieldsToShow = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'VIOLIN', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'ORDERS', 'Plan', 'To do', 'Priority'];
+    fieldsToShow = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'To do', 'Priority'];
             break;
 
       
@@ -3643,7 +3643,7 @@ case 'chartcheck':
             const checkboxFields = ['NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
 
             // New field structure: NAME, RM, MRN, PRIORITY at top, then system fields
-            const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'ORDERS'];
+            const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'PROBLEMS', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'Priority',];
             fieldsToShowChartCheck.forEach(header => {
                 const label = document.createElement('label');
                 label.style.cssText = `
