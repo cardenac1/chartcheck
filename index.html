@@ -3494,7 +3494,7 @@ function switchView(mode) {
     
     switch(mode) {
         case 'basic':
-    fieldsToShow = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'VIOLIN', 'ORDERS', 'Plan', 'To do', 'Priority'];
+    fieldsToShow = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'VIOLIN', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'ORDERS', 'Plan', 'To do', 'Priority'];
             break;
 
       
@@ -3978,11 +3978,11 @@ form.appendChild(chartCheckContainer);
 
                     
                 case 'consult':
-                    // Show consult fields
+                    // Show consult fields with system fields
                     if (patient.Type === 'Consult') {
-                        fieldsToShow = ['Name', 'RM', 'MRN', 'A/G', 'CC', 'HPI', 'ROS', 'PMH', 'Meds', 'All', 'Surg hx', 'FSH', 'VIOLIN', 'PE', 'To do', 'Priority'];
+                        fieldsToShow = ['Name', 'RM', 'MRN', 'A/G', 'CC', 'HPI', 'ROS', 'PMH', 'Meds', 'All', 'Surg hx', 'FSH', 'VIOLIN', 'PE', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'ORDERS', 'To do', 'Priority'];
                     } else {
-                        fieldsToShow = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'ICS', 'VIOLIN', 'ORDERS', 'To do', 'Priority'];
+                        fieldsToShow = ['Name', 'RM', 'MRN', 'Att', 'Problems', 'ICS', 'VIOLIN', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN', 'ORDERS', 'To do', 'Priority'];
                     }
                     document.getElementById('consultControls').classList.remove('hidden');
                     updateConvertButton();
@@ -5124,20 +5124,23 @@ function showImportModal() {
             // Extract and format labs with abnormal detection
             const formattedLabs = formatLabsWithAbnormals(labDataObj);
 
-            // Extract vitals
-            const vitals = extractVitalsForSystems(text);
+            // Extract vitals (now includes o2therapy from labDataObj)
+            const vitals = extractVitalsForSystems(text, labDataObj);
 
-            // Extract I/O
-            const io = extractIOForSystems(text);
+            // Extract I/O (now includes cc/kg/hr calculation using weight from labDataObj)
+            const io = extractIOForSystems(text, labDataObj);
+
+            // Extract fluid infusions
+            const fluidInfusions = extractFluidInfusions(text);
 
             // Build each system section
             systems.NEURO = buildNeuroWithData(meds.neuro);
-            systems.PULM = buildPulmWithData(meds.pulm, vitals);
+            systems.PULM = buildPulmWithData(meds.pulm, vitals, labDataObj);
             systems.CV = buildCVWithData(meds.cv, vitals);
             systems.GI = buildGIWithData(meds.gi, meds.diet);
-            systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal, meds.ivf);
+            systems.RENAL = buildRenalWithData(formattedLabs, io, meds.renal, meds.ivf, fluidInfusions);
             systems.HEME = buildHemeWithData(formattedLabs, meds.anticoag);
-            systems.INFECTION = buildInfectionWithData(formattedLabs, meds.antibiotics);
+            systems.INFECTION = buildInfectionWithData(formattedLabs, meds.antibiotics, labDataObj);
             systems.ENDO = buildEndoWithData(formattedLabs, meds.endo);
             systems.SKIN = buildSkinWithData();
 
@@ -5241,7 +5244,7 @@ function showImportModal() {
             return meds;
         }
 
-        function extractVitalsForSystems(text) {
+        function extractVitalsForSystems(text, labDataObj) {
             const vitals = {};
             const hrMatch = text.match(/Heart Rate:?\s*(\d+)/i);
             if (hrMatch) vitals.hr = hrMatch[1];
@@ -5253,32 +5256,78 @@ function showImportModal() {
             if (rrMatch) vitals.rr = rrMatch[1];
             const o2Match = text.match(/SpO2:?\s*(\d+)/i);
             if (o2Match) vitals.o2 = o2Match[1];
+
+            // Extract O2 therapy from labDataObj if available
+            if (labDataObj && labDataObj.o2therapyCode) {
+                vitals.o2therapy = labDataObj.o2therapyCode;
+            } else if (labDataObj && labDataObj.o2therapyRaw) {
+                vitals.o2therapy = labDataObj.o2therapyRaw;
+            }
+
             return vitals;
         }
 
-        function extractIOForSystems(text) {
+        function extractIOForSystems(text, labDataObj) {
             const io = {};
             const uopMatch = text.match(/(?:Urine|UOP).*?(\d+)\s*(?:mL|ml)/i);
             if (uopMatch) io.uop = uopMatch[1];
+
             const totalInMatch = text.match(/Total.*?In.*?(\d+)\s*(?:mL|ml)/i);
             if (totalInMatch) io.totalIn = totalInMatch[1];
+
             const totalOutMatch = text.match(/Total.*?Out.*?(\d+)\s*(?:mL|ml)/i);
             if (totalOutMatch) io.totalOut = totalOutMatch[1];
+
             if (io.totalIn && io.totalOut) {
                 io.balance = parseInt(io.totalIn) - parseInt(io.totalOut);
             }
+
+            // Calculate cc/kg/hr for urine output
+            if (io.uop && labDataObj && labDataObj.weight) {
+                const uopValue = parseInt(io.uop);
+                const weight = labDataObj.weight;
+                // UOP is per 24hr, so divide by 24 to get per hour, then divide by weight
+                const ccKgHr = (uopValue / 24 / weight).toFixed(2);
+                io.ccKgHr = ccKgHr;
+            }
+
             return io;
+        }
+
+        function extractFluidInfusions(text) {
+            const infusions = [];
+            // Look for fluid infusions with rates (e.g., "Normal Saline 100 mL/hr")
+            const fluidPatterns = [
+                {regex: /(?:Normal Saline|NS|0\.9%.*?NaCl).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'NS'},
+                {regex: /(?:Lactated Ringer|LR).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'LR'},
+                {regex: /(?:D5W|Dextrose 5%).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'D5W'},
+                {regex: /(?:D5NS).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'D5NS'},
+                {regex: /(?:Plasmalyte|PlasmaLyte).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'PL'}
+            ];
+
+            for (const pattern of fluidPatterns) {
+                let match;
+                while ((match = pattern.regex.exec(text)) !== null) {
+                    const rate = match[1];
+                    infusions.push(`${pattern.name}@${rate}`);
+                }
+            }
+
+            return infusions;
         }
 
         function buildNeuroWithData(neuroMeds) {
             return `Dx: No Active Issues\nExam: GCS 15 E4V5M6, pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI\nMeds: ${neuroMeds.length > 0 ? neuroMeds.join(', ') : 'none'}`;
         }
 
-        function buildPulmWithData(pulmMeds, vitals) {
+        function buildPulmWithData(pulmMeds, vitals, labDataObj) {
             let section = 'Dx: No Active Issues\nExam: CTAB, regular rate';
-            if (vitals.o2) section += `, Satting ${vitals.o2}% on `;
+            if (vitals.o2) section += `, Satting ${vitals.o2}%`;
+            if (vitals.o2therapy) {
+                section += ` on ${vitals.o2therapy}`;
+            }
             if (vitals.rr) section += `, RR ${vitals.rr}`;
-            section += ' O2 therapy mode/vent settings\nMeds: ' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none');
+            section += '\nMeds: ' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none');
             return section;
         }
 
@@ -5301,11 +5350,15 @@ function showImportModal() {
             return section;
         }
 
-        function buildRenalWithData(labs, io, renalMeds, ivf) {
+        function buildRenalWithData(labs, io, renalMeds, ivf, fluidInfusions) {
             let section = 'Dx: No Active Issues\nExam: ';
-            if (io.uop) section += `UOP ${io.uop} mL/24hr, `;
-            if (io.totalIn) section += `In ${io.totalIn}mL, `;
-            if (io.totalOut) section += `Out ${io.totalOut}mL, `;
+            if (io.uop) {
+                section += `UOP ${io.uop} mL/24hr`;
+                if (io.ccKgHr) section += ` (${io.ccKgHr} cc/kg/hr)`;
+                section += ', ';
+            }
+            if (io.totalIn) section += `I: ${io.totalIn}mL, `;
+            if (io.totalOut) section += `O: ${io.totalOut}mL, `;
             if (io.balance) section += `Balance ${io.balance > 0 ? '+' : ''}${io.balance}mL`;
             section += '\nElectrolytes: ';
             if (labs.na) section += `Na ${labs.na}, `;
@@ -5316,7 +5369,10 @@ function showImportModal() {
             if (labs.cr) section += `Cr ${labs.cr}, `;
             if (labs.ca) section += `Ca ${labs.ca}, `;
             if (labs.mg) section += `Mg ${labs.mg}`;
-            section += `\nIVF: ${ivf && ivf.length > 0 ? ivf.join(', ') : 'none'}\nMeds: ${renalMeds.length > 0 ? renalMeds.join(', ') : 'none'}`;
+
+            // Include fluid infusions if available
+            const allFluids = [...(fluidInfusions || []), ...(ivf || [])];
+            section += `\nIVF: ${allFluids.length > 0 ? allFluids.join(', ') : 'none'}\nMeds: ${renalMeds.length > 0 ? renalMeds.join(', ') : 'none'}`;
             return section;
         }
 
@@ -5331,10 +5387,26 @@ function showImportModal() {
             return section;
         }
 
-        function buildInfectionWithData(labs, antibiotics) {
+        function buildInfectionWithData(labs, antibiotics, labDataObj) {
             let section = 'Dx: No Active Issues\nCx: none\nExam: ';
             if (labs.wbc) section += `WBC ${labs.wbc}, `;
-            section += 'Tmax, T average\nAbx: ' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none');
+
+            // Extract temperature from vitals in labDataObj
+            if (labDataObj && labDataObj.vitals && labDataObj.vitals.temp) {
+                const temps = labDataObj.vitals.temp;
+                if (temps.length > 0) {
+                    const latest = temps[temps.length - 1];
+                    const max = Math.max(...temps);
+                    const avg = (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1);
+                    section += `Tmax ${max}°C, T avg ${avg}°C (current ${latest}°C)`;
+                } else {
+                    section += 'Tmax, T average';
+                }
+            } else {
+                section += 'Tmax, T average';
+            }
+
+            section += '\nAbx: ' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none');
             return section;
         }
 
@@ -6451,7 +6523,7 @@ function toggleOrdersView() {
         
         medsLines.forEach(line => {
             const trimmedLine = line.trim();
-            
+
             if (trimmedLine.toLowerCase().includes('scheduled:')) {
                 currentSection = 'Scheduled';
                 return;
@@ -6462,10 +6534,14 @@ function toggleOrdersView() {
                 currentSection = 'Continuous';
                 return;
             }
-            
+
             if (!trimmedLine) return;
-            
-            const displayLine = currentSection === 'PRN' ? `PRN ${trimmedLine}` : trimmedLine;
+
+            // Use abbreviation function
+            const abbreviated = abbreviateMedLine(trimmedLine);
+            if (!abbreviated) return;
+
+            const displayLine = currentSection === 'PRN' ? `PRN: ${abbreviated}` : abbreviated;
             const lineLower = trimmedLine.toLowerCase();
             
             if (lineLower.match(/npo|lactated ringers|normal saline|parenteral|sodium chloride|dextrose|infant formula|pediatric|regular diet|clear liquid|renal|cardiac|diabetic|dysphagia|soft|full liquid|bariatric|albumin/i)) {
@@ -8807,6 +8883,180 @@ function extractDoseInfo(line) {
         function extractFullMeds(text) {
             const medsMatch = text.match(/Medications.*?\(\d+\)\s*Active([\s\S]*?)(?=(?:\n\n)?(?:DIET ORDER:|CONSULTATION:|PROCEDURE:|IMAGING:|LABS:|$))/i);
             return medsMatch ? medsMatch[1] : '';
+        }
+
+        // COMPREHENSIVE MEDICATION ABBREVIATION FUNCTION
+        function abbreviateMedLine(line) {
+            const lineLower = line.toLowerCase().trim();
+
+            // Skip header lines
+            if (lineLower.includes('scheduled:') || lineLower.includes('prn:') || lineLower.includes('continuous:')) {
+                return null;
+            }
+
+            if (!lineLower || lineLower.length < 3) return null;
+
+            // Use the drugAbbreviations from extractOrders
+            const MED_ABBREVIATIONS = {
+                // Pain medications
+                'hydromorphone': 'D', 'dilaudid': 'D',
+                'oxycodone': 'O', 'percocet': 'O',
+                'morphine': 'M',
+                'fentanyl': 'F', 'fentanyl citrate': 'F',
+                'acetaminophen': 'T', 'tylenol': 'T',
+                'ibuprofen': 'Ibu',
+                'ketorolac': 'Toradol', 'toradol': 'Toradol',
+                'tramadol': 'Tramadol',
+                'hydrocodone': 'Norco',
+                'meperidine': 'Demerol',
+                'codeine': 'Codeine',
+
+                // Antibiotics
+                'cefepime': 'Cefepime',
+                'vancomycin': 'Vanc',
+                'piperacillin-tazobactam': 'Pip-Tazo',
+                'piperacillin': 'Pip',
+                'tazobactam': 'Tazo',
+                'meropenem': 'Mero',
+                'imipenem': 'Imi',
+                'ceftriaxone': 'CTX',
+                'ceftazidime': 'Ceftaz',
+                'cefazolin': 'Ancef',
+                'azithromycin': 'Azithro',
+                'levofloxacin': 'Levo',
+                'ciprofloxacin': 'Cipro',
+                'metronidazole': 'Flagyl',
+                'daptomycin': 'Dapto',
+                'eravacycline': 'Xerava',
+                'micafungin': 'Mica',
+                'caspofungin': 'Caspo',
+                'fluconazole': 'Fluc',
+                'sulfamethoxazole-trimethoprim': 'TMP-SMX',
+                'sulfamethoxazole': 'SMX',
+                'trimethoprim': 'TMP',
+                'linezolid': 'Zyvox',
+                'clindamycin': 'Clinda',
+                'ampicillin': 'Amp',
+                'gentamicin': 'Gent',
+                'tobramycin': 'Tobra',
+
+                // Pressors/Sedation
+                'norepinephrine': 'Levo', 'norepinephrine': 'Levo',
+                'epinephrine': 'Epi',
+                'vasopressin': 'Vaso',
+                'phenylephrine': 'Neo',
+                'dopamine': 'Dopa',
+                'dobutamine': 'Dobu',
+                'propofol': 'Prop',
+                'midazolam': 'Versed',
+                'dexmedetomidine': 'Prec',
+                'lorazepam': 'Ativan',
+                'diazepam': 'Valium',
+                'ketamine': 'Ketamine',
+
+                // Anticoagulation
+                'heparin': 'Hep',
+                'enoxaparin': 'Lovenox', 'lovenox': 'Lovenox',
+                'warfarin': 'Coumadin',
+                'apixaban': 'Eliquis',
+                'rivaroxaban': 'Xarelto',
+                'dabigatran': 'Pradaxa',
+                'aspirin': 'ASA',
+                'clopidogrel': 'Plavix',
+                'ticagrelor': 'Brilinta',
+                'prasugrel': 'Effient',
+
+                // GI
+                'ondansetron': 'Z',
+                'pantoprazole': 'Protonix',
+                'famotidine': 'Pepcid',
+                'omeprazole': 'Prilosec',
+                'esomeprazole': 'Nexium',
+                'lansoprazole': 'Prevacid',
+                'docusate': 'Colace',
+                'senna': 'Senna',
+                'bisacodyl': 'Dulcolax',
+                'polyethylene glycol': 'Miralax',
+                'metoclopramide': 'Reglan',
+
+                // Cardio/Pulm
+                'metoprolol': 'Metop',
+                'carvedilol': 'Coreg',
+                'labetalol': 'Labetalol',
+                'lisinopril': 'Lisinopril',
+                'losartan': 'Losartan',
+                'amlodipine': 'Norvasc',
+                'diltiazem': 'Cardizem',
+                'nicardipine': 'Cardene',
+                'hydralazine': 'Hydral',
+                'furosemide': 'Lasix',
+                'bumetanide': 'Bumex',
+                'spironolactone': 'Spiro',
+                'albuterol': 'Alb',
+                'ipratropium': 'Atro',
+                'albuterol-ipratropium': 'DuoNeb',
+                'nitroglycerin': 'NTG',
+                'amiodarone': 'Amio',
+
+                // Statins
+                'rosuvastatin': 'Crestor',
+                'atorvastatin': 'Lipitor',
+                'simvastatin': 'Zocor',
+
+                // Neuro
+                'levetiracetam': 'Keppra',
+                'gabapentin': 'Neurontin',
+                'pregabalin': 'Lyrica',
+                'haloperidol': 'Haldol',
+                'quetiapine': 'Seroquel',
+
+                // Fluids
+                'lactated ringers': 'LR',
+                'normal saline': 'NS',
+                'sodium chloride': 'NS',
+                'albumin': 'Albumin'
+            };
+
+            // Find matching medication
+            let abbr = null;
+            let longestMatch = '';
+            for (const [medName, medAbbr] of Object.entries(MED_ABBREVIATIONS)) {
+                if (lineLower.includes(medName) && medName.length > longestMatch.length) {
+                    abbr = medAbbr;
+                    longestMatch = medName;
+                }
+            }
+
+            if (!abbr) return line; // Return original if no match
+
+            // Extract dose, frequency, route
+            const doseMatch = line.match(/(\d+(?:,\d{3})*(?:\.\d+)?)\s*(mg|mcg|g|unit|mL|mEq)/i);
+            const freqMatch = line.match(/(?:every\s+(\d+)\s+hours?|q(\d+)h|daily|bid|tid|qid|once|prn)/i);
+            const routeMatch = line.match(/\b(IV|PO|SC|IM|PR|NEB|INH)\b/i);
+
+            let result = abbr;
+
+            if (doseMatch) {
+                const dose = doseMatch[1].replace(/,/g, '');
+                const unit = doseMatch[2];
+                result += ` ${dose}${unit}`;
+            }
+
+            if (freqMatch) {
+                if (freqMatch[1]) result += ` Q${freqMatch[1]}`;
+                else if (freqMatch[2]) result += ` Q${freqMatch[2]}`;
+                else result += ` ${freqMatch[0]}`;
+            }
+
+            if (routeMatch) {
+                result += ` ${routeMatch[1]}`;
+            }
+
+            if (lineLower.includes('prn') || lineLower.includes('as needed')) {
+                result += ' PRN';
+            }
+
+            return result;
         }
 
 
