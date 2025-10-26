@@ -3598,6 +3598,26 @@ case 'chartcheck':
                 border-right: 1px solid var(--border);
             `;
 
+            // ADD VIOLIN DISPLAY AT THE TOP OF LEFT PANEL
+            const violinDisplayContainer = document.createElement('div');
+            violinDisplayContainer.id = 'violinDisplay';
+            violinDisplayContainer.style.cssText = `
+                background: var(--dark-bg);
+                color: var(--text-primary);
+                border: 1px solid var(--border);
+                padding: 0.75rem;
+                border-radius: 0.25rem;
+                font-family: monospace;
+                font-size: 0.9rem;
+                line-height: 1.6;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+                margin-bottom: 1rem;
+                overflow-x: auto;
+                display: block;
+            `;
+            leftPanel.appendChild(violinDisplayContainer);
+
             // New field structure: NAME, RM, MRN, PRIORITY at top, then system fields
             const fieldsToShowChartCheck = ['Name', 'RM', 'MRN', 'Priority', 'NEURO', 'PULM', 'CV', 'GI', 'RENAL', 'HEME', 'INFECTION', 'ENDO', 'SKIN'];
             fieldsToShowChartCheck.forEach(header => {
@@ -3878,11 +3898,13 @@ form.appendChild(chartCheckContainer);
                     labData = {};
                 }
             }
-            
+
             setTimeout(() => {
                 updateChartCheckProgress();
+                // Update violin display with warnings/vitals/IO/labs
+                updateViolinDisplay();
             }, 100);
-            
+
             break;
        
 
@@ -11384,20 +11406,11 @@ while (i < fishboneLines.length && !foundFluidBalance) {
 }
 
 
-  // Create display container
-  let violinDisplay = document.getElementById('violinDisplay');
+  // Get display container (it's created in the chart check left panel)
+  const violinDisplay = document.getElementById('violinDisplay');
   if (!violinDisplay) {
-    violinDisplay = document.createElement('div');
-    violinDisplay.id = 'violinDisplay';
-    violinDisplay.style.cssText = `
-      background: var(--dark-bg); color: var(--text-primary);
-      border: 1px solid var(--border); padding: 0.75rem; border-radius: 0.25rem;
-      font-family: monospace; font-size: 0.9rem; line-height: 1.6;
-      white-space: pre-wrap; word-wrap: break-word; margin-top: 0.5rem; overflow-x: auto;
-    `;
-    const textarea = document.getElementById('field_VIOLIN');
-    if (textarea?.parentNode) textarea.parentNode.insertBefore(violinDisplay, textarea.nextSibling);
-    else document.body.appendChild(violinDisplay);
+    console.warn('violinDisplay element not found');
+    return; // Exit if element doesn't exist
   }
 
   violinDisplay.innerHTML = '';
