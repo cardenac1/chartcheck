@@ -5356,7 +5356,7 @@ function extractMedsBySystem(text) {
         cv: [
             // Pressors
             'norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
-            'dopamine', 'dobutamine',
+            'dopamine', 'dobutamine', 'angiotensin',
             // Beta blockers
             'metoprolol', 'carvedilol', 'labetalol', 'atenolol', 'esmolol',
             // ACE/ARBs
@@ -5391,7 +5391,7 @@ function extractMedsBySystem(text) {
         endo: [
             'insulin', 'lispro', 'aspart', 'glargine', 'detemir', 'degludec',
             'levothyroxine', 'liothyronine', 'hydrocortisone', 'dexamethasone',
-            'prednisone', 'methylprednisolone'
+            'prednisone', 'methylprednisolone', 'fludrocortisone'
         ],
         renal: [
             'furosemide', 'bumetanide', 'torsemide', 'spironolactone',
@@ -5912,9 +5912,9 @@ function categorizeMedication(med) {
     const ANTIBIOTICS = ['cefepime', 'vancomycin', 'piperacillin', 'tazobactam', 'meropenem',
                         'ceftriaxone', 'azithromycin', 'levofloxacin', 'ciprofloxacin',
                         'metronidazole', 'daptomycin', 'fluconazole', 'linezolid'];
-    const PRESSORS_SEDATION = ['norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
-                              'dopamine', 'dobutamine', 'propofol', 'midazolam', 
-                              'dexmedetomidine', 'lorazepam', 'diazepam'];
+    const PRESSORS = ['norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
+                     'dopamine', 'dobutamine', 'angiotensin'];
+    const SEDATION = ['propofol', 'midazolam', 'dexmedetomidine', 'lorazepam', 'diazepam'];
     const ANTICOAG = ['heparin', 'enoxaparin', 'warfarin', 'apixaban', 'rivaroxaban',
                      'aspirin', 'clopidogrel', 'ticagrelor'];
     const NEURO = ['levetiracetam', 'phenytoin', 'valproic acid', 'carbamazepine',
@@ -5926,7 +5926,7 @@ function categorizeMedication(med) {
                         'albuterol', 'ipratropium', 'nitroglycerin', 'amiodarone',
                         'atorvastatin', 'rosuvastatin'];
     const ENDOCRINE = ['insulin', 'lispro', 'aspart', 'glargine', 'levothyroxine',
-                      'hydrocortisone', 'dexamethasone', 'prednisone', 'methylprednisolone'];
+                      'hydrocortisone', 'dexamethasone', 'prednisone', 'methylprednisolone', 'fludrocortisone'];
     
     // Check each category
     for (let drug of PAIN) {
@@ -5935,7 +5935,10 @@ function categorizeMedication(med) {
     for (let drug of ANTIBIOTICS) {
         if (nameLower.includes(drug)) return 'antibiotics';
     }
-    for (let drug of PRESSORS_SEDATION) {
+    for (let drug of PRESSORS) {
+        if (nameLower.includes(drug)) return 'cv';
+    }
+    for (let drug of SEDATION) {
         if (nameLower.includes(drug)) return 'neuro';
     }
     for (let drug of ANTICOAG) {
@@ -8807,7 +8810,8 @@ fishbone += `Ca:${caStr}, Mg:${mgStr}, P:${phosStr}\n`;
     'lorazepam': { abbr: 'Ativan', orders: 'Pain', system: 'neuro' },
     'diazepam': { abbr: 'Valium', orders: 'Pain', system: 'neuro' },
     'ketamine': { abbr: 'Ketamine', orders: 'Pain', system: 'neuro' },
-    
+    'angiotensin': { abbr: 'Angiotensin', orders: 'Abx', system: 'cv' },
+
     // Anticoagulation
     'heparin': { abbr: 'Hep', orders: 'AC', system: 'anticoag' },
     'enoxaparin': { abbr: 'Lovenox', orders: 'AC', system: 'anticoag' },
@@ -8926,7 +8930,8 @@ fishbone += `Ca:${caStr}, Mg:${mgStr}, P:${phosStr}\n`;
     'liothyronine': { abbr: 'Cytomel', orders: 'Pain', system: 'endo' },
     'hydrocortisone': { abbr: 'Solu-Cortef', orders: 'Pain', system: 'endo' },
     'dexamethasone': { abbr: 'Decadron', orders: 'Pain', system: 'endo' },
-    
+    'fludrocortisone': { abbr: 'Fludro', orders: 'Pain', system: 'endo' },
+
     // Others
     'tacrolimus': { abbr: 'Tacro', orders: 'Pain', system: 'renal' },
     'cyclosporine': { abbr: 'Cyclo', orders: 'Pain', system: 'renal' },
@@ -9427,7 +9432,8 @@ const MED_ABBREVIATIONS = {
     'lorazepam': 'Ativan',
     'diazepam': 'Valium',
     'ketamine': 'Ketamine',
-    
+    'angiotensin': 'Angiotensin',
+
     // Anticoagulation
     'heparin': 'Hep',
     'enoxaparin': 'Lovenox',
@@ -9537,7 +9543,8 @@ const MED_ABBREVIATIONS = {
     'liothyronine': 'Cytomel',
     'hydrocortisone': 'Solu-Cortef',
     'dexamethasone': 'Decadron',
-    
+    'fludrocortisone': 'Fludro',
+
     // Others
     'tacrolimus': 'Tacro',
     'cyclosporine': 'Cyclo',
@@ -9581,8 +9588,8 @@ const MED_CATEGORIES = {
                  'clindamycin', 'ampicillin', 'gentamicin', 'tobramycin'],
     
     PRESSORS_SEDATION: ['norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine', 'dopamine',
-                       'dobutamine', 'propofol', 'midazolam', 'dexmedetomidine', 'lorazepam', 
-                       'diazepam', 'ketamine'],
+                       'dobutamine', 'propofol', 'midazolam', 'dexmedetomidine', 'lorazepam',
+                       'diazepam', 'ketamine', 'angiotensin'],
     
     ANTICOAG: ['heparin', 'enoxaparin', 'warfarin', 'apixaban', 'rivaroxaban', 'dabigatran',
               'aspirin', 'clopidogrel', 'ticagrelor', 'prasugrel'],
@@ -9606,7 +9613,7 @@ const MED_CATEGORIES = {
                  'simvastatin', 'pravastatin', 'lovastatin', 'fluvastatin', 'pitavastatin'],
     
     ENDOCRINE: ['insulin', 'lispro', 'aspart', 'regular', 'isophane', 'nph', 'glargine', 'detemir',
-               'degludec', 'levothyroxine', 'liothyronine', 'hydrocortisone', 'dexamethasone']
+               'degludec', 'levothyroxine', 'liothyronine', 'hydrocortisone', 'dexamethasone', 'fludrocortisone']
 };
 
 // 3. CORE ABBREVIATION FUNCTION (the key one!)
@@ -9799,10 +9806,11 @@ function parseFluidInfusion(line, isPRN) {
 // 8. PARSE CONTINUOUS INFUSION
 function parseInfusion(line, isPRN) {
     const infusionDrugs = [
-        'norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine', 
-        'dopamine', 'dobutamine', 'heparin', 'insulin regular', 'propofol', 
-        'fentanyl', 'midazolam', 'dexmedetomidine', 'nitroglycerin', 
-        'nicardipine', 'amiodarone', 'diltiazem', 'esmolol', 'ketamine'
+        'norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
+        'dopamine', 'dobutamine', 'heparin', 'insulin regular', 'propofol',
+        'fentanyl', 'midazolam', 'dexmedetomidine', 'nitroglycerin',
+        'nicardipine', 'amiodarone', 'diltiazem', 'esmolol', 'ketamine',
+        'angiotensin'
     ];
     
     let drugName = '';
