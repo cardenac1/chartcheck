@@ -5184,62 +5184,187 @@ function showImportModal() {
 
 
 
+// Helper function to check if line is hypoglycemia protocol
+function isHypoglycemiaProtocol(line) {
+    const hypoIndicators = [
+        'dextrose 10%',
+        'dextrose 50%',
+        'glucose 40%',
+        'glucagon recombinant',
+        'glucagon'
+    ];
+    return hypoIndicators.some(indicator => line.toLowerCase().includes(indicator));
+}
+
+// Helper function to parse insulin sliding scale
+function parseInsulinSlidingScale(line) {
+    if (!line.toLowerCase().includes('insulin lispro') && !line.toLowerCase().includes('humalog')) {
+        return null;
+    }
+
+    // Check for sliding scale pattern (0-X units)
+    const match = line.match(/0-(\d+)\s*unit/i);
+    if (match) {
+        const maxUnits = parseInt(match[1]);
+        const freqMatch = line.match(/every\s+(\d+)\s+hours/i);
+        const freq = freqMatch ? `Q${freqMatch[1]}` : 'Q4';
+
+        let scaleName = '';
+        if (maxUnits >= 20) {
+            scaleName = 'ISS-R';
+        } else if (maxUnits <= 10) {
+            scaleName = 'ISS-N';
+        } else {
+            scaleName = 'ISS';
+        }
+
+        return `${scaleName} ${freq} SC`;
+    }
+
+    // Check for scheduled insulin (fixed dose)
+    const scheduledMatch = line.match(/(\d+)\s*unit\(s\)/i);
+    if (scheduledMatch && !line.includes('0-')) {
+        const units = scheduledMatch[1];
+        const freqMatch = line.match(/every\s+(\d+)\s+hours/i);
+        const timesMatch = line.match(/(\d+)\s+times\s+a\s+day/i);
+
+        let freq = '';
+        if (freqMatch) {
+            freq = `Q${freqMatch[1]}`;
+        } else if (timesMatch) {
+            const times = timesMatch[1];
+            if (times === '2') freq = 'BID';
+            else if (times === '3') freq = 'TID';
+            else if (times === '4') freq = 'QID';
+        }
+
+        return `Lispro${units}u ${freq} SC`;
+    }
+
+    return null;
+}
+
+// Helper function to extract diet orders
+function extractDietName(text) {
+    const dietPatterns = [
+        { pattern: /\bNPO\b/i, name: 'NPO' },
+        { pattern: /nothing by mouth/i, name: 'NPO' },
+        { pattern: /clear liquid diet/i, name: 'Clear liquid diet' },
+        { pattern: /full liquid diet/i, name: 'Full liquid diet' },
+        { pattern: /regular diet/i, name: 'Regular diet' },
+        { pattern: /cardiac diet/i, name: 'Cardiac diet' },
+        { pattern: /diabetic diet/i, name: 'Diabetic diet' },
+        { pattern: /renal diet/i, name: 'Renal diet' },
+        { pattern: /low sodium diet/i, name: 'Low sodium diet' },
+        { pattern: /pureed diet/i, name: 'Pureed diet' },
+        { pattern: /mechanical soft diet/i, name: 'Mechanical soft diet' },
+        { pattern: /dysphagia diet/i, name: 'Dysphagia diet' },
+        { pattern: /tube feed/i, name: 'Tube feeds' },
+        { pattern: /enteral nutrition/i, name: 'Enteral nutrition' }
+    ];
+
+    for (let dietPattern of dietPatterns) {
+        if (dietPattern.pattern.test(text)) {
+            return dietPattern.name;
+        }
+    }
+    return null;
+}
+
  function abbreviateMedLine(line) {
     if (!line || !line.trim()) return null;
-    
+
     const trimmedLine = line.trim();
-    
-    // 1. HANDLE FLUIDS (NS@100, LR@125, etc.)
+
+    // 1. CHECK FOR HYPOGLYCEMIA PROTOCOL
+    if (isHypoglycemiaProtocol(trimmedLine)) {
+        return 'Hypoglycemia protocol IV/PO PRN';
+    }
+
+    // 2. CHECK FOR INSULIN SLIDING SCALE
+    const insulinResult = parseInsulinSlidingScale(trimmedLine);
+    if (insulinResult) {
+        return insulinResult;
+    }
+
+    // 3. HANDLE FLUIDS (NS@100, LR@125, etc.)
     if (trimmedLine.match(/ml\/hr/i)) {
         const rateMatch = trimmedLine.match(/(\d+)\s*mL\/hr/i);
         if (rateMatch) {
             const rate = rateMatch[1];
             if (trimmedLine.toLowerCase().includes('lactated ringer')) {
                 return `LR@${rate}`;
-            } else if (trimmedLine.toLowerCase().includes('0.9%') || trimmedLine.toLowerCase().includes('normal saline')) {
+            } else if (trimmedLine.toLowerCase().includes('sodium chloride 0.9%') || trimmedLine.toLowerCase().includes('normal saline')) {
                 return `NS@${rate}`;
-            } else if (trimmedLine.toLowerCase().includes('d5w')) {
+            } else if (trimmedLine.toLowerCase().includes('dextrose 5%') || trimmedLine.toLowerCase().includes('d5w')) {
                 return `D5W@${rate}`;
-            } else if (trimmedLine.toLowerCase().includes('0.45%')) {
+            } else if (trimmedLine.toLowerCase().includes('0.45%') || trimmedLine.toLowerCase().includes('sodium chloride 0.45%')) {
                 return `1/2NS@${rate}`;
+            } else if (trimmedLine.toLowerCase().includes('plasmalyte')) {
+                return `PL@${rate}`;
+            } else if (trimmedLine.toLowerCase().includes('parenteral nutrition')) {
+                return `TPN@${rate}`;
             }
         }
     }
-    
-    // 2. HANDLE CONTINUOUS INFUSIONS (Levo gtt, Prop gtt, etc.)
+
+    // 4. HANDLE CONTINUOUS INFUSIONS (Levo gtt, Prop gtt, etc.)
     if (trimmedLine.toLowerCase().includes('iv continuous') || trimmedLine.toLowerCase().includes('continuous infusion')) {
-        const words = trimmedLine.split(/\s+/);
-        const drugName = words[0].toLowerCase();
+        const infusionDrugs = [
+            'norepinephrine', 'norEPINEPHrine', 'epinephrine', 'EPINEPHrine',
+            'vasopressin', 'phenylephrine', 'dopamine', 'DOPamine', 'dobutamine',
+            'heparin', 'insulin regular', 'propofol', 'fentanyl', 'fentaNYL',
+            'midazolam', 'dexmedetomidine', 'dexmedeTOMIDine',
+            'nitroglycerin', 'nicardipine', 'niCARdipine',
+            'amiodarone', 'diltiazem', 'esmolol', 'ketamine'
+        ];
+
+        let drugName = '';
+        const lineLower = trimmedLine.toLowerCase();
+
+        for (let drug of infusionDrugs) {
+            if (lineLower.includes(drug.toLowerCase())) {
+                drugName = drug;
+                break;
+            }
+        }
+
+        if (!drugName) {
+            drugName = trimmedLine.split(/\s+/)[0];
+        }
+
         const abbreviated = abbreviateMedication(drugName);
         return `${abbreviated} gtt`;
     }
-    
-    // 3. STANDARD MEDICATIONS - use double-space separator
+
+    // 5. STANDARD MEDICATIONS - use double-space separator
     const doubleSeparator = trimmedLine.indexOf('  ');
     if (doubleSeparator === -1) {
         return null; // Invalid format
     }
-    
+
     const beforeSeparator = trimmedLine.substring(0, doubleSeparator).trim();
     const afterSeparator = trimmedLine.substring(doubleSeparator + 2).trim();
-    
+
     // Extract drug name (everything before dose/formulation markers like "400 mg")
-    const drugName = beforeSeparator.replace(/\d+\s*(mg|mcg|unit|%|mL|g)\b.*/i, '').trim();
-    
+    let drugName = beforeSeparator.replace(/\d+\s*(mg|mcg|unit|%|mL|g)\b.*/i, '').trim();
+    // Remove any parenthetical text like (Aspirin)
+    drugName = drugName.replace(/\s*\([^)]*\)/g, '').trim();
+
     // Parse: dose, route, frequency (comma-separated after double space)
     const parts = afterSeparator.split(',').map(p => p.trim());
     let dose = parts[0] || '';
     let route = parts[1] || '';
     let freq = parts[2] || '';
-    
-    // 4. CLEAN AND ABBREVIATE EACH COMPONENT
-    
+
+    // 6. CLEAN AND ABBREVIATE EACH COMPONENT
+
     // Clean dose - handle combination drugs (e.g., "400-80mg")
     const comboDoseMatch = beforeSeparator.match(/(\d+)\s*mg-(\d+)\s*mg/i);
     if (comboDoseMatch) {
         dose = `${comboDoseMatch[1]}-${comboDoseMatch[2]}`;
     } else {
-        const doseMatch = dose.match(/^([\d,\.]+)\s*(mg|mcg|g|unit|mL)/i);
+        const doseMatch = dose.match(/^([\d,\.]+)\s*(mg|mcg|g|unit\(s\)|units?|mL|mEq|intl units)/i);
         if (doseMatch) {
             let value = doseMatch[1].replace(',', '');
             let unit = doseMatch[2];
@@ -5248,10 +5373,14 @@ function showImportModal() {
                 value = parseFloat(value) / 1000;
                 unit = 'g';
             }
+            // Abbreviate units
+            unit = unit.replace('unit(s)', 'u').replace('units', 'u').replace('unit', 'u').replace('intl units', 'IU');
             dose = `${value}${unit}`;
+        } else {
+            dose = dose.split(/\s+/)[0];
         }
     }
-    
+
     // Abbreviate route (PO, IV, SC, etc.)
     const routeMap = {
         'Oral': 'PO',
@@ -5262,10 +5391,14 @@ function showImportModal() {
         'Transdermal': 'TD',
         'Inhalation': 'INH',
         'NEB': 'NEB',
-        'Nasal': 'IN'
+        'Nasal': 'IN',
+        'Eye-Both': 'OU',
+        'Eye-Left': 'OS',
+        'Eye-Right': 'OD',
+        'Swish and Swallow': 'S&S'
     };
     route = routeMap[route] || (route.toLowerCase().includes('iv') ? 'IV' : route);
-    
+
     // Abbreviate frequency (BID, TID, Q4, etc.)
     const hourMatch = freq.match(/every\s+(\d+)\s+hours?/i);
     if (hourMatch) {
@@ -5273,11 +5406,22 @@ function showImportModal() {
     } else {
         const freqMap = {
             'Daily': 'QD',
+            'Once': 'x1',
             '2 times a day': 'BID',
+            '2 times per day': 'BID',
             '3 times a day': 'TID',
+            '3 times per day': 'TID',
             '4 times a day': 'QID',
+            '4 times per day': 'QID',
+            '6 times per day': 'Q4',
+            'every 7 days': 'Q7D',
+            'every week': 'Q7D',
+            'every 48 hours': 'Q48',
             'every evening': 'QPM',
-            'every morning': 'QAM'
+            'every morning': 'QAM',
+            'As Directed': 'PRN',
+            'Monday and Thursday': 'Mon/Thu',
+            'On Call': 'on call'
         };
         for (let [key, value] of Object.entries(freqMap)) {
             if (freq.includes(key)) {
@@ -5286,19 +5430,19 @@ function showImportModal() {
             }
         }
     }
-    
+
     // Abbreviate medication name using your MED_ABBREVIATIONS database
     const abbreviated = abbreviateMedication(drugName);
-    
+
     // Check if PRN
     const isPRN = trimmedLine.toLowerCase().includes('prn');
-    
-    // 5. FORMAT OUTPUT: name + dose + frequency + route + PRN
+
+    // 7. FORMAT OUTPUT: name + dose + frequency + route + PRN
     let result = abbreviated + dose;
     if (freq) result += ` ${freq}`;
     if (route) result += ` ${route}`;
     if (isPRN) result += ' PRN';
-    
+
     return result;
 }
 
@@ -5471,16 +5615,34 @@ function extractMedsBySystem(text) {
     if (medSection) {
         const medText = medSection[0];
         const medLines = medText.split('\n');
-        
+
+        // Track hypoglycemia protocol lines
+        let hypoglycemiaLines = [];
+
         // First pass: assign medications to their systems with abbreviations
         for (const line of medLines) {
             if (!line.trim() || line.match(/^Medications/i) || line.match(/^\s*(Scheduled|PRN|Continuous):/i)) continue;
-            
+
+            // Check for hypoglycemia protocol
+            if (isHypoglycemiaProtocol(line)) {
+                hypoglycemiaLines.push(line);
+                continue;
+            }
+
+            // Check for diet orders within medications
+            const dietName = extractDietName(line);
+            if (dietName) {
+                if (!meds.diet.includes(dietName)) {
+                    meds.diet.push(dietName);
+                }
+                continue;
+            }
+
             const parsed = parseMedicationLine(line);
             if (!parsed) continue;
-            
+
             const system = categorizeMed(parsed.drugName);
-            
+
             if (system) {
                 if (!meds[system].some(m => m === parsed.abbreviated)) {
                     meds[system].push(parsed.abbreviated);
@@ -5488,12 +5650,23 @@ function extractMedsBySystem(text) {
                 }
             }
         }
-        
+
+        // Add hypoglycemia protocol to endo if found
+        if (hypoglycemiaLines.length > 0) {
+            const hypoProtocol = 'Hypoglycemia protocol IV/PO PRN';
+            if (!meds.endo.includes(hypoProtocol)) {
+                meds.endo.push(hypoProtocol);
+            }
+        }
+
         // Second pass: collect all unassigned medications for SKIN
         for (const line of medLines) {
             if (!line.trim() || line.match(/^Medications/i) || line.match(/^\s*(Scheduled|PRN|Continuous):/i)) continue;
-            
+
             const trimmedLine = line.trim();
+            // Skip hypoglycemia and diet lines
+            if (isHypoglycemiaProtocol(trimmedLine) || extractDietName(trimmedLine)) continue;
+
             if (!assignedMeds.has(trimmedLine.toLowerCase())) {
                 const parsed = parseMedicationLine(line);
                 if (parsed && !meds.skin.some(m => m === parsed.abbreviated)) {
@@ -9407,6 +9580,7 @@ const MED_ABBREVIATIONS = {
     'ciprofloxacin': 'Cipro',
     'metronidazole': 'Flagyl',
     'daptomycin': 'Dapto',
+    'eravacycline': 'Xerava',
     'micafungin': 'Mica',
     'caspofungin': 'Caspo',
     'fluconazole': 'Fluc',
