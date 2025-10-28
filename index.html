@@ -118,8 +118,6 @@
 
 
 
-
-const VIOLIN_DASHBOARD_CSS = `
 .violin-dashboard-container {
     overflow-x: auto;
     border-radius: 12px;
@@ -3694,7 +3692,7 @@ case 'chartcheck':
                 }
                 
                 // ADD SPECIAL BUTTONS FOR SPECIFIC FIELDS
-                if (header === 'Problems') {
+                if (header === 'PROBLEMS') {
                     const podBtn = document.createElement('button');
                     podBtn.textContent = 'Update POD';
                     podBtn.style.marginLeft = '10px';
@@ -3839,15 +3837,6 @@ case 'chartcheck':
                 
                 if (input.tagName === 'TEXTAREA') {
                     setTimeout(() => autoResizeTextarea(input), 0);
-                }
-                
-                // Add full orders display below ORDERS field
-                if (header === 'ORDERS') {
-                    const fullOrdersDiv = document.createElement('div');
-                    fullOrdersDiv.id = 'fullOrdersDisplay';
-                    fullOrdersDiv.className = 'orders-section hidden';
-                    fullOrdersDiv.style.marginTop = '0.75rem';
-                    leftPanel.appendChild(fullOrdersDiv);
                 }
             });
             
@@ -4675,8 +4664,8 @@ const CONSULT_MODE_LABELS = {
     if (patient.Type === 'Consult') {
         if (confirm('Convert this consult to a regular patient?')) {
             patient.Type = 'Patient';
-            if (!patient.Problems && patient.HPI) {
-                patient.Problems = patient.HPI;
+            if (!patient.PROBLEMS && patient.HPI) {
+                patient.PROBLEMS = patient.HPI;
             }
             saveToLocalStorage();
             switchView('consult');
@@ -4685,8 +4674,8 @@ const CONSULT_MODE_LABELS = {
     } else {
         if (confirm('Convert this patient to a consult?')) {
             patient.Type = 'Consult';
-            if (!patient.HPI && patient.Problems) {
-                patient.HPI = patient.Problems;
+            if (!patient.HPI && patient.PROBLEMS) {
+                patient.HPI = patient.PROBLEMS;
             }
             
             // AUTO-ASSIGN PRIORITY 1 WHEN CONVERTING TO CONSULT
@@ -5142,7 +5131,7 @@ function showImportModal() {
             systems.HEME = buildHemeWithData(formattedLabs, meds.anticoag);
             systems.INFECTION = buildInfectionWithData(formattedLabs, meds.antibiotics, labDataObj);
             systems.ENDO = buildEndoWithData(formattedLabs, meds.endo);
-            systems.SKIN = buildSkinWithData();
+            systems.SKIN = buildSkinWithData(meds.skin);
 
             return systems;
         }
@@ -5193,233 +5182,489 @@ function showImportModal() {
             return formatted;
         }
 
-        function extractMedsBySystem(text) {
-            const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: [], diet: [], ivf: []};
 
-            const patterns = {
-                neuro: /fentanyl|morphine|hydromorphone|oxycodone|gabapentin|pregabalin|levetiracetam|propofol|midazolam|lorazepam|dexmedetomidine/gi,
-                pulm: /albuterol|ipratropium|duoneb|budesonide|fluticasone/gi,
-                cv: /metoprolol|carvedilol|labetalol|lisinopril|losartan|amlodipine|diltiazem|hydralazine|furosemide|norepinephrine|epinephrine|vasopressin|amiodarone|atorvastatin|rosuvastatin/gi,
-                gi: /ondansetron|pantoprazole|omeprazole|famotidine|docusate|senna|bisacodyl|miralax|metoclopramide/gi,
-                anticoag: /heparin|enoxaparin|warfarin|apixaban|rivaroxaban|aspirin|clopidogrel/gi,
-                antibiotics: /vancomycin|cefepime|piperacillin|tazobactam|meropenem|ceftriaxone|levofloxacin|metronidazole|daptomycin|linezolid|fluconazole/gi,
-                endo: /insulin|lispro|aspart|glargine|levothyroxine/gi
-            };
 
-            // Extract medications section with doses
-            const medSection = text.match(/Medications.*?(?=(?:\n\n|DIET ORDER:|IV FLUIDS:|LABS:|$))/is);
-            if (medSection) {
-                const medText = medSection[0];
-                const medLines = medText.split('\n');
+ function abbreviateMedLine(line) {
+    if (!line || !line.trim()) return null;
+    
+    const trimmedLine = line.trim();
+    
+    // 1. HANDLE FLUIDS (NS@100, LR@125, etc.)
+    if (trimmedLine.match(/ml\/hr/i)) {
+        const rateMatch = trimmedLine.match(/(\d+)\s*mL\/hr/i);
+        if (rateMatch) {
+            const rate = rateMatch[1];
+            if (trimmedLine.toLowerCase().includes('lactated ringer')) {
+                return `LR@${rate}`;
+            } else if (trimmedLine.toLowerCase().includes('0.9%') || trimmedLine.toLowerCase().includes('normal saline')) {
+                return `NS@${rate}`;
+            } else if (trimmedLine.toLowerCase().includes('d5w')) {
+                return `D5W@${rate}`;
+            } else if (trimmedLine.toLowerCase().includes('0.45%')) {
+                return `1/2NS@${rate}`;
+            }
+        }
+    }
+    
+    // 2. HANDLE CONTINUOUS INFUSIONS (Levo gtt, Prop gtt, etc.)
+    if (trimmedLine.toLowerCase().includes('iv continuous') || trimmedLine.toLowerCase().includes('continuous infusion')) {
+        const words = trimmedLine.split(/\s+/);
+        const drugName = words[0].toLowerCase();
+        const abbreviated = abbreviateMedication(drugName);
+        return `${abbreviated} gtt`;
+    }
+    
+    // 3. STANDARD MEDICATIONS - use double-space separator
+    const doubleSeparator = trimmedLine.indexOf('  ');
+    if (doubleSeparator === -1) {
+        return null; // Invalid format
+    }
+    
+    const beforeSeparator = trimmedLine.substring(0, doubleSeparator).trim();
+    const afterSeparator = trimmedLine.substring(doubleSeparator + 2).trim();
+    
+    // Extract drug name (everything before dose/formulation markers like "400 mg")
+    const drugName = beforeSeparator.replace(/\d+\s*(mg|mcg|unit|%|mL|g)\b.*/i, '').trim();
+    
+    // Parse: dose, route, frequency (comma-separated after double space)
+    const parts = afterSeparator.split(',').map(p => p.trim());
+    let dose = parts[0] || '';
+    let route = parts[1] || '';
+    let freq = parts[2] || '';
+    
+    // 4. CLEAN AND ABBREVIATE EACH COMPONENT
+    
+    // Clean dose - handle combination drugs (e.g., "400-80mg")
+    const comboDoseMatch = beforeSeparator.match(/(\d+)\s*mg-(\d+)\s*mg/i);
+    if (comboDoseMatch) {
+        dose = `${comboDoseMatch[1]}-${comboDoseMatch[2]}`;
+    } else {
+        const doseMatch = dose.match(/^([\d,\.]+)\s*(mg|mcg|g|unit|mL)/i);
+        if (doseMatch) {
+            let value = doseMatch[1].replace(',', '');
+            let unit = doseMatch[2];
+            // Convert 1000mg+ to grams
+            if (unit.toLowerCase() === 'mg' && parseFloat(value) >= 1000) {
+                value = parseFloat(value) / 1000;
+                unit = 'g';
+            }
+            dose = `${value}${unit}`;
+        }
+    }
+    
+    // Abbreviate route (PO, IV, SC, etc.)
+    const routeMap = {
+        'Oral': 'PO',
+        'Intravenous': 'IV',
+        'Subcutaneous': 'SC',
+        'Intramuscular': 'IM',
+        'Per Rectum': 'PR',
+        'Transdermal': 'TD',
+        'Inhalation': 'INH',
+        'NEB': 'NEB',
+        'Nasal': 'IN'
+    };
+    route = routeMap[route] || (route.toLowerCase().includes('iv') ? 'IV' : route);
+    
+    // Abbreviate frequency (BID, TID, Q4, etc.)
+    const hourMatch = freq.match(/every\s+(\d+)\s+hours?/i);
+    if (hourMatch) {
+        freq = `Q${hourMatch[1]}`;
+    } else {
+        const freqMap = {
+            'Daily': 'QD',
+            '2 times a day': 'BID',
+            '3 times a day': 'TID',
+            '4 times a day': 'QID',
+            'every evening': 'QPM',
+            'every morning': 'QAM'
+        };
+        for (let [key, value] of Object.entries(freqMap)) {
+            if (freq.includes(key)) {
+                freq = value;
+                break;
+            }
+        }
+    }
+    
+    // Abbreviate medication name using your MED_ABBREVIATIONS database
+    const abbreviated = abbreviateMedication(drugName);
+    
+    // Check if PRN
+    const isPRN = trimmedLine.toLowerCase().includes('prn');
+    
+    // 5. FORMAT OUTPUT: name + dose + frequency + route + PRN
+    let result = abbreviated + dose;
+    if (freq) result += ` ${freq}`;
+    if (route) result += ` ${route}`;
+    if (isPRN) result += ' PRN';
+    
+    return result;
+}
 
-                for (const line of medLines) {
-                    if (!line.trim() || line.match(/^Medications/i)) continue;
+// Helper function to look up drug abbreviations
+function abbreviateMedication(drugName) {
+    const nameLower = drugName.toLowerCase();
+    
+    // Check your MED_ABBREVIATIONS database
+    for (let [key, abbrev] of Object.entries(MED_ABBREVIATIONS)) {
+        if (nameLower.includes(key)) {
+            return abbrev;
+        }
+    }
+    
+    // If not found, return original name
+    return drugName;
+}
 
-                    for (const [system, pattern] of Object.entries(patterns)) {
-                        if (pattern.test(line)) {
-                            // Extract full line with dose information
-                            const cleanLine = line.trim();
-                            if (!meds[system].some(m => m.toLowerCase() === cleanLine.toLowerCase())) {
-                                meds[system].push(cleanLine);
-                            }
-                            pattern.lastIndex = 0; // Reset regex
-                        }
-                    }
+
+
+
+
+
+
+// COMPLETE COPY-PASTE SOLUTION FOR ULTIMATE PATIENT LIST MEDICATION PROCESSING
+// Replace the functions at the specified line numbers with these corrected versions
+
+// ============================================================================
+// REPLACE extractMedsBySystem function (around line 5323-5466)
+// ============================================================================
+function extractMedsBySystem(text) {
+    const meds = {neuro: [], pulm: [], cv: [], gi: [], renal: [], anticoag: [], antibiotics: [], endo: [], diet: [], ivf: [], skin: []};
+    const assignedMeds = new Set();
+    
+    // Comprehensive category patterns
+    const categoryPatterns = {
+        neuro: [
+            // Pain medications
+            'hydromorphone', 'oxycodone', 'morphine', 'fentanyl', 'acetaminophen',
+            'ibuprofen', 'ketorolac', 'tramadol', 'hydrocodone', 'meperidine', 'codeine',
+            // Sedation
+            'propofol', 'midazolam', 'lorazepam', 'dexmedetomidine', 'diazepam', 'ketamine',
+            // Neuro/Psych
+            'levetiracetam', 'phenytoin', 'valproic acid', 'carbamazepine', 'lamotrigine',
+            'topiramate', 'gabapentin', 'pregabalin', 'lacosamide', 'haloperidol',
+            'quetiapine', 'olanzapine', 'risperidone', 'aripiprazole', 'ziprasidone',
+            'clozapine', 'lithium', 'valproate', 'sertraline', 'escitalopram',
+            'fluoxetine', 'paroxetine', 'citalopram', 'venlafaxine', 'duloxetine',
+            'bupropion', 'mirtazapine', 'trazodone', 'clonazepam', 'alprazolam'
+        ],
+        pulm: [
+            'albuterol', 'ipratropium', 'duoneb', 'budesonide', 'fluticasone',
+            'montelukast', 'tiotropium', 'formoterol', 'salmeterol'
+        ],
+        cv: [
+            // Pressors
+            'norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
+            'dopamine', 'dobutamine',
+            // Beta blockers
+            'metoprolol', 'carvedilol', 'labetalol', 'atenolol', 'esmolol',
+            // ACE/ARBs
+            'lisinopril', 'enalapril', 'captopril', 'losartan', 'valsartan',
+            // CCBs
+            'amlodipine', 'diltiazem', 'nicardipine',
+            // Other cardiac
+            'hydralazine', 'furosemide', 'bumetanide', 'torsemide', 'spironolactone',
+            'nitroglycerin', 'isosorbide', 'digoxin', 'amiodarone', 'sotalol', 'flecainide',
+            // Statins
+            'rosuvastatin', 'atorvastatin', 'simvastatin', 'pravastatin',
+            'lovastatin', 'fluvastatin', 'pitavastatin'
+        ],
+        gi: [
+            'ondansetron', 'pantoprazole', 'omeprazole', 'esomeprazole', 'lansoprazole',
+            'famotidine', 'ranitidine', 'docusate', 'senna', 'bisacodyl',
+            'polyethylene glycol', 'miralax', 'metoclopramide', 'promethazine',
+            'prochlorperazine'
+        ],
+        anticoag: [
+            'heparin', 'enoxaparin', 'warfarin', 'apixaban', 'rivaroxaban',
+            'dabigatran', 'aspirin', 'clopidogrel', 'ticagrelor', 'prasugrel'
+        ],
+        antibiotics: [
+            'cefepime', 'vancomycin', 'piperacillin', 'tazobactam', 'meropenem',
+            'imipenem', 'ceftriaxone', 'ceftazidime', 'cefazolin', 'azithromycin',
+            'levofloxacin', 'ciprofloxacin', 'metronidazole', 'daptomycin',
+            'micafungin', 'caspofungin', 'fluconazole', 'sulfamethoxazole',
+            'trimethoprim', 'linezolid', 'clindamycin', 'ampicillin',
+            'gentamicin', 'tobramycin', 'erythromycin', 'eravacycline'
+        ],
+        endo: [
+            'insulin', 'lispro', 'aspart', 'glargine', 'detemir', 'degludec',
+            'levothyroxine', 'liothyronine', 'hydrocortisone', 'dexamethasone',
+            'prednisone', 'methylprednisolone'
+        ],
+        renal: [
+            'furosemide', 'bumetanide', 'torsemide', 'spironolactone',
+            'magnesium', 'potassium', 'calcium'
+        ]
+    };
+    
+    // Helper function to parse and abbreviate a single medication line
+    function parseMedicationLine(line) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) return null;
+        
+        // Check for fluid infusion
+        if (trimmedLine.match(/ml\/hr/i)) {
+            const rateMatch = trimmedLine.match(/(\d+)\s*mL\/hr/i);
+            if (rateMatch) {
+                const rate = rateMatch[1];
+                if (trimmedLine.toLowerCase().includes('lactated ringer')) {
+                    return { abbreviated: `LR@${rate}`, original: trimmedLine, drugName: 'lactated ringers' };
+                } else if (trimmedLine.toLowerCase().includes('normal saline') || trimmedLine.toLowerCase().includes('0.9%')) {
+                    return { abbreviated: `NS@${rate}`, original: trimmedLine, drugName: 'normal saline' };
+                } else if (trimmedLine.toLowerCase().includes('d5w')) {
+                    return { abbreviated: `D5W@${rate}`, original: trimmedLine, drugName: 'd5w' };
                 }
             }
-
-            // Extract diet orders
-            const dietMatch = text.match(/DIET ORDER:?\s*(.+?)(?=\n(?:[A-Z][A-Z\s]+:|$))/is);
-            if (dietMatch) {
-                meds.diet = [dietMatch[1].trim()];
-            }
-
-            // Extract IV fluids
-            const ivfMatch = text.match(/IV FLUIDS:?\s*(.+?)(?=\n(?:[A-Z][A-Z\s]+:|$))/is);
-            if (ivfMatch) {
-                const ivfLines = ivfMatch[1].split('\n').map(l => l.trim()).filter(l => l);
-                meds.ivf = ivfLines;
-            }
-
-            return meds;
         }
-
-        function extractVitalsForSystems(text, labDataObj) {
-            const vitals = {};
-            const hrMatch = text.match(/Heart Rate:?\s*(\d+)/i);
-            if (hrMatch) vitals.hr = hrMatch[1];
-            const bpMatch = text.match(/Blood Pressure:?\s*(\d+\/\d+)/i);
-            if (bpMatch) vitals.bp = bpMatch[1];
-            const mapMatch = text.match(/MAP:?\s*(\d+)/i);
-            if (mapMatch) vitals.map = mapMatch[1];
-            const rrMatch = text.match(/Respiratory Rate:?\s*(\d+)/i);
-            if (rrMatch) vitals.rr = rrMatch[1];
-            const o2Match = text.match(/SpO2:?\s*(\d+)/i);
-            if (o2Match) vitals.o2 = o2Match[1];
-
-            // Extract O2 therapy from labDataObj if available
-            if (labDataObj && labDataObj.o2therapyCode) {
-                vitals.o2therapy = labDataObj.o2therapyCode;
-            } else if (labDataObj && labDataObj.o2therapyRaw) {
-                vitals.o2therapy = labDataObj.o2therapyRaw;
+        
+        // Check for continuous infusion
+        if (trimmedLine.toLowerCase().includes('iv continuous')) {
+            const words = trimmedLine.split(/\s+/);
+            const drugName = words[0].toLowerCase();
+            const abbreviated = abbreviateMedLine(trimmedLine);
+            if (abbreviated && !abbreviated.includes('continuous')) {
+                return { abbreviated: abbreviated + ' gtt', original: trimmedLine, drugName: drugName };
             }
-
-            return vitals;
         }
-
-        function extractIOForSystems(text, labDataObj) {
-            const io = {};
-            const uopMatch = text.match(/(?:Urine|UOP).*?(\d+)\s*(?:mL|ml)/i);
-            if (uopMatch) io.uop = uopMatch[1];
-
-            const totalInMatch = text.match(/Total.*?In.*?(\d+)\s*(?:mL|ml)/i);
-            if (totalInMatch) io.totalIn = totalInMatch[1];
-
-            const totalOutMatch = text.match(/Total.*?Out.*?(\d+)\s*(?:mL|ml)/i);
-            if (totalOutMatch) io.totalOut = totalOutMatch[1];
-
-            if (io.totalIn && io.totalOut) {
-                io.balance = parseInt(io.totalIn) - parseInt(io.totalOut);
-            }
-
-            // Calculate cc/kg/hr for urine output
-            if (io.uop && labDataObj && labDataObj.weight) {
-                const uopValue = parseInt(io.uop);
-                const weight = labDataObj.weight;
-                // UOP is per 24hr, so divide by 24 to get per hour, then divide by weight
-                const ccKgHr = (uopValue / 24 / weight).toFixed(2);
-                io.ccKgHr = ccKgHr;
-            }
-
-            return io;
+        
+        // Standard medication parsing using double-space separator
+        const doubleSeparator = trimmedLine.indexOf('  ');
+        if (doubleSeparator === -1) {
+            // Try to abbreviate the line as-is
+            const abbreviated = abbreviateMedLine(trimmedLine);
+            return abbreviated ? { abbreviated, original: trimmedLine, drugName: trimmedLine.split(/\s+/)[0].toLowerCase() } : null;
         }
-
-        function extractFluidInfusions(text) {
-            const infusions = [];
-            // Look for fluid infusions with rates (e.g., "Normal Saline 100 mL/hr")
-            const fluidPatterns = [
-                {regex: /(?:Normal Saline|NS|0\.9%.*?NaCl).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'NS'},
-                {regex: /(?:Lactated Ringer|LR).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'LR'},
-                {regex: /(?:D5W|Dextrose 5%).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'D5W'},
-                {regex: /(?:D5NS).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'D5NS'},
-                {regex: /(?:Plasmalyte|PlasmaLyte).*?(\d+)\s*(?:mL|ml)\/hr/gi, name: 'PL'}
-            ];
-
-            for (const pattern of fluidPatterns) {
-                let match;
-                while ((match = pattern.regex.exec(text)) !== null) {
-                    const rate = match[1];
-                    infusions.push(`${pattern.name}@${rate}`);
+        
+        const beforeSeparator = trimmedLine.substring(0, doubleSeparator);
+        
+        // Extract drug name (everything before dose/formulation)
+        const drugName = beforeSeparator.replace(/\d+\s*(mg|mcg|unit|%|mL|g)\b.*/i, '').trim().toLowerCase();
+        
+        // Get abbreviated drug name
+        const abbreviated = abbreviateMedLine(trimmedLine);
+        if (!abbreviated) return null;
+        
+        return {
+            abbreviated,
+            original: trimmedLine,
+            drugName: drugName
+        };
+    }
+    
+    // Helper to categorize medication into a system
+    function categorizeMed(drugName) {
+        const nameLower = drugName.toLowerCase();
+        for (const [system, drugs] of Object.entries(categoryPatterns)) {
+            for (const drug of drugs) {
+                if (nameLower.includes(drug)) {
+                    return system;
                 }
             }
-
-            return infusions;
         }
-
-        function buildNeuroWithData(neuroMeds) {
-            return `Dx: No Active Issues\nExam: GCS 15 E4V5M6, pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI\nMeds: ${neuroMeds.length > 0 ? neuroMeds.join(', ') : 'none'}`;
-        }
-
-        function buildPulmWithData(pulmMeds, vitals, labDataObj) {
-            let section = 'Dx: No Active Issues\nExam: CTAB, regular rate';
-            if (vitals.o2) section += `, Satting ${vitals.o2}%`;
-            if (vitals.o2therapy) {
-                section += ` on ${vitals.o2therapy}`;
-            }
-            if (vitals.rr) section += `, RR ${vitals.rr}`;
-            section += '\nMeds: ' + (pulmMeds.length > 0 ? pulmMeds.join(', ') : 'none');
-            return section;
-        }
-
-        function buildCVWithData(cvMeds, vitals) {
-            let section = 'Dx: No Active Issues\nExam: ';
-            if (vitals.hr) section += `HR ${vitals.hr}, `;
-            if (vitals.bp) section += `BP ${vitals.bp}, `;
-            if (vitals.map) section += `MAP ${vitals.map}, `;
-            section += 'RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access\nMeds: ' + (cvMeds.length > 0 ? cvMeds.join(', ') : 'none');
-            return section;
-        }
-
-        function buildGIWithData(giMeds, diet) {
-            let section = 'Dx: No Active Issues\nExam: abd soft, non tender non distended, incisions c/d/i, BMx1\n';
-            section += `Nutrition: ${diet && diet.length > 0 ? diet.join(', ') : 'diet order'}\n`;
-            const ppxMeds = giMeds.filter(m => m.toLowerCase().includes('pantoprazole') || m.toLowerCase().includes('famotidine') || m.toLowerCase().includes('omeprazole'));
-            const bowelMeds = giMeds.filter(m => m.toLowerCase().includes('docusate') || m.toLowerCase().includes('senna') || m.toLowerCase().includes('miralax'));
-            section += `GI ppx: ${ppxMeds.length > 0 ? ppxMeds.join(', ') : 'none'}\n`;
-            section += `Bowel reg: ${bowelMeds.length > 0 ? bowelMeds.join(', ') : 'none'}`;
-            return section;
-        }
-
-        function buildRenalWithData(labs, io, renalMeds, ivf, fluidInfusions) {
-            let section = 'Dx: No Active Issues\nExam: ';
-            if (io.uop) {
-                section += `UOP ${io.uop} mL/24hr`;
-                if (io.ccKgHr) section += ` (${io.ccKgHr} cc/kg/hr)`;
-                section += ', ';
-            }
-            if (io.totalIn) section += `I: ${io.totalIn}mL, `;
-            if (io.totalOut) section += `O: ${io.totalOut}mL, `;
-            if (io.balance) section += `Balance ${io.balance > 0 ? '+' : ''}${io.balance}mL`;
-            section += '\nElectrolytes: ';
-            if (labs.na) section += `Na ${labs.na}, `;
-            if (labs.k) section += `K ${labs.k}, `;
-            if (labs.cl) section += `Cl ${labs.cl}, `;
-            if (labs.co2) section += `CO2 ${labs.co2}, `;
-            if (labs.bun) section += `BUN ${labs.bun}, `;
-            if (labs.cr) section += `Cr ${labs.cr}, `;
-            if (labs.ca) section += `Ca ${labs.ca}, `;
-            if (labs.mg) section += `Mg ${labs.mg}`;
-
-            // Include fluid infusions if available
-            const allFluids = [...(fluidInfusions || []), ...(ivf || [])];
-            section += `\nIVF: ${allFluids.length > 0 ? allFluids.join(', ') : 'none'}\nMeds: ${renalMeds.length > 0 ? renalMeds.join(', ') : 'none'}`;
-            return section;
-        }
-
-        function buildHemeWithData(labs, anticoagMeds) {
-            let section = 'Dx: No Active Issues\nLabs: ';
-            if (labs.hgb) section += `Hgb ${labs.hgb}, `;
-            if (labs.plt) section += `PLT ${labs.plt}, `;
-            if (labs.pt) section += `PT ${labs.pt}, `;
-            if (labs.ptt) section += `PTT ${labs.ptt}, `;
-            if (labs.inr) section += `INR ${labs.inr}`;
-            section += '\nDVT ppx: ' + (anticoagMeds.length > 0 ? anticoagMeds.join(', ') : 'none');
-            return section;
-        }
-
-        function buildInfectionWithData(labs, antibiotics, labDataObj) {
-            let section = 'Dx: No Active Issues\nCx: none\nExam: ';
-            if (labs.wbc) section += `WBC ${labs.wbc}, `;
-
-            // Extract temperature from vitals in labDataObj
-            if (labDataObj && labDataObj.vitals && labDataObj.vitals.temp) {
-                const temps = labDataObj.vitals.temp;
-                if (temps.length > 0) {
-                    const latest = temps[temps.length - 1];
-                    const max = Math.max(...temps);
-                    const avg = (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1);
-                    section += `Tmax ${max}°C, T avg ${avg}°C (current ${latest}°C)`;
-                } else {
-                    section += 'Tmax, T average';
+        return null;
+    }
+    
+    // Extract medications section
+    const medSection = text.match(/Medications.*?(?=(?:\n\n|DIET ORDER:|IV FLUIDS:|LABS:|$))/is);
+    if (medSection) {
+        const medText = medSection[0];
+        const medLines = medText.split('\n');
+        
+        // First pass: assign medications to their systems with abbreviations
+        for (const line of medLines) {
+            if (!line.trim() || line.match(/^Medications/i) || line.match(/^\s*(Scheduled|PRN|Continuous):/i)) continue;
+            
+            const parsed = parseMedicationLine(line);
+            if (!parsed) continue;
+            
+            const system = categorizeMed(parsed.drugName);
+            
+            if (system) {
+                if (!meds[system].some(m => m === parsed.abbreviated)) {
+                    meds[system].push(parsed.abbreviated);
+                    assignedMeds.add(parsed.original.toLowerCase());
                 }
-            } else {
-                section += 'Tmax, T average';
             }
-
-            section += '\nAbx: ' + (antibiotics.length > 0 ? antibiotics.join(', ') : 'none');
-            return section;
         }
-
-        function buildEndoWithData(labs, endoMeds) {
-            let section = 'Dx: No Active Issues\nBG: ';
-            if (labs.glu) section += `glucose ${labs.glu}`;
-            section += ' blood glucose range\nMeds: ' + (endoMeds.length > 0 ? endoMeds.join(', ') : 'none');
-            return section;
+        
+        // Second pass: collect all unassigned medications for SKIN
+        for (const line of medLines) {
+            if (!line.trim() || line.match(/^Medications/i) || line.match(/^\s*(Scheduled|PRN|Continuous):/i)) continue;
+            
+            const trimmedLine = line.trim();
+            if (!assignedMeds.has(trimmedLine.toLowerCase())) {
+                const parsed = parseMedicationLine(line);
+                if (parsed && !meds.skin.some(m => m === parsed.abbreviated)) {
+                    meds.skin.push(parsed.abbreviated);
+                }
+            }
         }
-
-        function buildSkinWithData() {
-            return 'Dx: No Active Issues\nLabs Q:';
+    }
+    
+    // SORT MEDICATIONS WITHIN EACH CATEGORY
+    const sortMeds = (medArray) => {
+        return medArray.sort((a, b) => {
+            const aPRN = a.includes('PRN');
+            const bPRN = b.includes('PRN');
+            if (aPRN && !bPRN) return 1;
+            if (!aPRN && bPRN) return -1;
+            return a.localeCompare(b);
+        });
+    };
+    
+    // Sort all medication arrays
+    for (const system in meds) {
+        if (Array.isArray(meds[system])) {
+            meds[system] = sortMeds(meds[system]);
         }
+    }
+    
+    // Extract diet orders
+    const dietMatch = text.match(/DIET ORDER:?\s*(.+?)(?=\n(?:[A-Z][A-Z\s]+:|$))/is);
+    if (dietMatch) {
+        meds.diet = [dietMatch[1].trim()];
+    }
+    
+    // Extract IV fluids
+    const ivfMatch = text.match(/IV FLUIDS:?\s*(.+?)(?=\n(?:[A-Z][A-Z\s]+:|$))/is);
+    if (ivfMatch) {
+        const ivfLines = ivfMatch[1].split('\n').map(l => l.trim()).filter(l => l);
+        meds.ivf = ivfLines;
+    }
+    
+    return meds;
+}
+
+// ============================================================================
+// REPLACE ALL SYSTEM BUILDING FUNCTIONS (lines 5540-5644)
+// ============================================================================
+
+function buildNeuroWithData(neuroMeds) {
+    const medsFormatted = neuroMeds.length > 0 ? `*${neuroMeds.join(', ')}*` : 'none';
+    return `Dx: No Active Issues\nExam: GCS 15 E4V5M6, pain well controlled, strength and sensation intact BUE+BLE, CN II-XII grossly intact, PERRLA, EOMI\nMeds: ${medsFormatted}`;
+}
+
+function buildPulmWithData(pulmMeds, vitals, labDataObj) {
+    let section = 'Dx: No Active Issues\nExam: CTAB, regular rate';
+    if (vitals.o2) section += `, Satting ${vitals.o2}%`;
+    if (vitals.o2therapy) {
+        section += ` on ${vitals.o2therapy}`;
+    }
+    if (vitals.rr) section += `, RR ${vitals.rr}`;
+    const medsFormatted = pulmMeds.length > 0 ? `*${pulmMeds.join(', ')}*` : 'none';
+    section += '\nMeds: ' + medsFormatted;
+    return section;
+}
+
+function buildCVWithData(cvMeds, vitals) {
+    let section = 'Dx: No Active Issues\nExam: ';
+    if (vitals.hr) section += `HR ${vitals.hr}, `;
+    if (vitals.bp) section += `BP ${vitals.bp}, `;
+    if (vitals.map) section += `MAP ${vitals.map}, `;
+    section += 'RRR, no edema, 2+ BL PT/DP, Radial/Ulnar pulses, PIVs for access';
+    const medsFormatted = cvMeds.length > 0 ? `*${cvMeds.join(', ')}*` : 'none';
+    section += '\nMeds: ' + medsFormatted;
+    return section;
+}
+
+function buildGIWithData(giMeds, diet) {
+    let section = 'Dx: No Active Issues\nExam: abd soft, non tender non distended, incisions c/d/i, BMx1\n';
+    section += `Nutrition: ${diet && diet.length > 0 ? diet.join(', ') : 'diet order'}\n`;
+    const ppxMeds = giMeds.filter(m => m.toLowerCase().includes('pantoprazole') || m.toLowerCase().includes('protonix') || 
+                                        m.toLowerCase().includes('famotidine') || m.toLowerCase().includes('pepcid') || 
+                                        m.toLowerCase().includes('omeprazole') || m.toLowerCase().includes('prilosec'));
+    const bowelMeds = giMeds.filter(m => m.toLowerCase().includes('docusate') || m.toLowerCase().includes('colace') || 
+                                          m.toLowerCase().includes('senna') || m.toLowerCase().includes('miralax') || 
+                                          m.toLowerCase().includes('bisacodyl') || m.toLowerCase().includes('dulcolax'));
+    section += `GI ppx: ${ppxMeds.length > 0 ? `*${ppxMeds.join(', ')}*` : 'none'}\n`;
+    section += `Bowel reg: ${bowelMeds.length > 0 ? `*${bowelMeds.join(', ')}*` : 'none'}`;
+    return section;
+}
+
+function buildRenalWithData(labs, io, renalMeds, ivf, fluidInfusions) {
+    let section = 'Dx: No Active Issues\nExam: ';
+    if (io.uop) {
+        section += `UOP ${io.uop} mL/24hr`;
+        if (io.ccKgHr) section += ` (${io.ccKgHr} cc/kg/hr)`;
+        section += ', ';
+    }
+    if (io.totalIn) section += `I: ${io.totalIn}mL, `;
+    if (io.totalOut) section += `O: ${io.totalOut}mL, `;
+    if (io.balance) section += `Balance ${io.balance > 0 ? '+' : ''}${io.balance}mL`;
+    section += '\nElectrolytes: ';
+    if (labs.na) section += `Na ${labs.na}, `;
+    if (labs.k) section += `K ${labs.k}, `;
+    if (labs.cl) section += `Cl ${labs.cl}, `;
+    if (labs.co2) section += `CO2 ${labs.co2}, `;
+    if (labs.bun) section += `BUN ${labs.bun}, `;
+    if (labs.cr) section += `Cr ${labs.cr}, `;
+    if (labs.ca) section += `Ca ${labs.ca}, `;
+    if (labs.mg) section += `Mg ${labs.mg}`;
+
+    // Include fluid infusions if available
+    const allFluids = [...(fluidInfusions || []), ...(ivf || [])];
+    const ivfFormatted = allFluids.length > 0 ? `*${allFluids.join(', ')}*` : 'none';
+    const renalMedsFormatted = renalMeds.length > 0 ? `*${renalMeds.join(', ')}*` : 'none';
+    section += `\nIVF: ${ivfFormatted}\nMeds: ${renalMedsFormatted}`;
+    return section;
+}
+
+function buildHemeWithData(labs, anticoagMeds) {
+    let section = 'Dx: No Active Issues\nLabs: ';
+    if (labs.hgb) section += `Hgb ${labs.hgb}, `;
+    if (labs.plt) section += `PLT ${labs.plt}, `;
+    if (labs.pt) section += `PT ${labs.pt}, `;
+    if (labs.ptt) section += `PTT ${labs.ptt}, `;
+    if (labs.inr) section += `INR ${labs.inr}`;
+    const dvtFormatted = anticoagMeds.length > 0 ? `*${anticoagMeds.join(', ')}*` : 'none';
+    section += '\nDVT ppx: ' + dvtFormatted;
+    return section;
+}
+
+function buildInfectionWithData(labs, antibiotics, labDataObj) {
+    let section = 'Dx: No Active Issues\nCx: none\nExam: ';
+    if (labs.wbc) section += `WBC ${labs.wbc}, `;
+    
+    if (labDataObj && labDataObj.vitals && labDataObj.vitals.temp) {
+        const temps = labDataObj.vitals.temp;
+        if (temps.length > 0) {
+            const latest = temps[temps.length - 1];
+            const max = Math.max(...temps);
+            const avg = (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1);
+            section += `Tmax ${max}°C, T avg ${avg}°C (current ${latest}°C)`;
+        } else {
+            section += 'Tmax, T average';
+        }
+    } else {
+        section += 'Tmax, T average';
+    }
+    
+    const abxFormatted = antibiotics.length > 0 ? `*${antibiotics.join(', ')}*` : 'none';
+    section += '\nAbx: ' + abxFormatted;
+    return section;
+}
+
+function buildEndoWithData(labs, endoMeds) {
+    let section = 'Dx: No Active Issues\nBG: ';
+    if (labs.glu) section += `glucose ${labs.glu}`;
+    section += ' blood glucose range';
+    const medsFormatted = endoMeds.length > 0 ? `*${endoMeds.join(', ')}*` : 'none';
+    section += '\nMeds: ' + medsFormatted;
+    return section;
+}
+
+function buildSkinWithData(skinMeds) {
+    let section = 'Dx: No Active Issues\nOther Meds: ';
+    const medsFormatted = (skinMeds && skinMeds.length > 0) ? `*${skinMeds.join(', ')}*` : 'none';
+    section += medsFormatted;
+    return section;
+}
+
+
+
+
 
         // ============ BRACKET MERGING LOGIC ============
         // "( )" sections always refresh with new data
@@ -5518,7 +5763,200 @@ function showImportModal() {
 
 
 
+// ============================================================================
+// MEDICATION PROCESSING FUNCTIONS
+// ============================================================================
 
+function processMedicationsFromImport(importText) {
+    // Initialize categories
+    const meds = {
+        neuro: [],
+        pulm: [],
+        cv: [],
+        gi: [],
+        renal: [],
+        endo: [],
+        anticoag: [],
+        antibiotics: [],
+        ivf: [],
+        skin: []
+    };
+    
+    // Extract medication section
+    const medSection = importText.match(/Medications.*?(?=(?:\n\n|DIET ORDER:|IV FLUIDS:|LABS:|$))/is);
+    if (!medSection) return meds;
+    
+    const medText = medSection[0];
+    const medLines = medText.split('\n');
+    
+    const processedMeds = new Set();
+    let isPRN = false;
+    
+    for (const line of medLines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine.length < 3) continue;
+        
+        // Detect section headers
+        const lineLower = trimmedLine.toLowerCase();
+        if (lineLower.includes('scheduled:')) {
+            isPRN = false;
+            continue;
+        }
+        if (lineLower.includes('prn:') || lineLower.includes('as needed:')) {
+            isPRN = true;
+            continue;
+        }
+        if (lineLower.includes('continuous:')) {
+            isPRN = false;
+            continue;
+        }
+        
+        // Skip medication header line
+        if (lineLower.includes('medications (') || lineLower.includes('active')) {
+            continue;
+        }
+        
+        // Parse the medication
+        const parsed = parseMedicationLine(trimmedLine, isPRN);
+        if (!parsed) continue;
+        
+        // Format for display
+        const medDisplay = formatMedicationForDisplay(parsed);
+        
+        // Skip if already processed
+        if (processedMeds.has(medDisplay)) continue;
+        processedMeds.add(medDisplay);
+        
+        // Categorize and add to appropriate system
+        const category = categorizeMedication(parsed);
+        if (category && meds[category]) {
+            meds[category].push(medDisplay);
+        }
+    }
+    
+    return meds;
+}
+
+
+
+
+function addMedicationsToSystem(existingContent, medications, label) {
+    if (!medications || medications.length === 0) {
+        // Remove old med lines if no new medications
+        if (!existingContent) return '';
+        
+        const lines = existingContent.split('\n').filter(line => {
+            const trimmed = line.trim();
+            return !trimmed.startsWith(`${label}:`) && 
+                   !trimmed.startsWith(`*${label}:`) &&
+                   !trimmed.includes(`*${label}*`);
+        });
+        return lines.join('\n');
+    }
+    
+    // Create new medication line with asterisks
+    const medLine = `*${label}: ${medications.join(', ')}*`;
+    
+    if (!existingContent || !existingContent.trim()) return medLine;
+    
+    const lines = existingContent.split('\n');
+    const newLines = [];
+    let replaced = false;
+    
+    for (let line of lines) {
+        const trimmed = line.trim();
+        
+        // Check if this is an old medication line
+        if (trimmed.startsWith(`${label}:`) || 
+            trimmed.startsWith(`*${label}:`) ||
+            trimmed.includes(`*${label}*`)) {
+            
+            if (!replaced) {
+                newLines.push(medLine); // Replace with new
+                replaced = true;
+            }
+            // Skip old line
+            continue;
+        }
+        
+        newLines.push(line);
+    }
+    
+    if (!replaced) {
+        newLines.push(medLine); // Append if not replaced
+    }
+    
+    return newLines.join('\n').trim();
+}
+
+
+
+function formatMedicationForDisplay(med) {
+    let result = med.name;
+    if (med.dose) result += ` ${med.dose}`;
+    if (med.frequency) result += ` ${med.frequency}`;
+    if (med.route) result += ` ${med.route}`;
+    if (med.isPRN) result += ' PRN';
+    return result;
+}
+
+function categorizeMedication(med) {
+    const nameLower = (med.fullName || med.name).toLowerCase();
+    
+    // Check if it's a fluid
+    if (med.isFluid) return 'ivf';
+    
+    // Define medication categories (using same database as before)
+    const PAIN = ['hydromorphone', 'oxycodone', 'morphine', 'fentanyl', 'acetaminophen', 
+                  'ibuprofen', 'ketorolac', 'tramadol', 'hydrocodone'];
+    const ANTIBIOTICS = ['cefepime', 'vancomycin', 'piperacillin', 'tazobactam', 'meropenem',
+                        'ceftriaxone', 'azithromycin', 'levofloxacin', 'ciprofloxacin',
+                        'metronidazole', 'daptomycin', 'fluconazole', 'linezolid'];
+    const PRESSORS_SEDATION = ['norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
+                              'dopamine', 'dobutamine', 'propofol', 'midazolam', 
+                              'dexmedetomidine', 'lorazepam', 'diazepam'];
+    const ANTICOAG = ['heparin', 'enoxaparin', 'warfarin', 'apixaban', 'rivaroxaban',
+                     'aspirin', 'clopidogrel', 'ticagrelor'];
+    const NEURO = ['levetiracetam', 'phenytoin', 'valproic acid', 'carbamazepine',
+                  'gabapentin', 'pregabalin', 'haloperidol', 'quetiapine', 'olanzapine'];
+    const GI = ['ondansetron', 'pantoprazole', 'omeprazole', 'famotidine', 'docusate',
+               'senna', 'bisacodyl', 'polyethylene', 'metoclopramide'];
+    const CARDIO_PULM = ['metoprolol', 'carvedilol', 'labetalol', 'lisinopril', 'losartan',
+                        'amlodipine', 'diltiazem', 'hydralazine', 'furosemide', 'bumetanide',
+                        'albuterol', 'ipratropium', 'nitroglycerin', 'amiodarone',
+                        'atorvastatin', 'rosuvastatin'];
+    const ENDOCRINE = ['insulin', 'lispro', 'aspart', 'glargine', 'levothyroxine',
+                      'hydrocortisone', 'dexamethasone', 'prednisone', 'methylprednisolone'];
+    
+    // Check each category
+    for (let drug of PAIN) {
+        if (nameLower.includes(drug)) return 'skin';
+    }
+    for (let drug of ANTIBIOTICS) {
+        if (nameLower.includes(drug)) return 'antibiotics';
+    }
+    for (let drug of PRESSORS_SEDATION) {
+        if (nameLower.includes(drug)) return 'neuro';
+    }
+    for (let drug of ANTICOAG) {
+        if (nameLower.includes(drug)) return 'anticoag';
+    }
+    for (let drug of NEURO) {
+        if (nameLower.includes(drug)) return 'neuro';
+    }
+    for (let drug of GI) {
+        if (nameLower.includes(drug)) return 'gi';
+    }
+    for (let drug of CARDIO_PULM) {
+        if (nameLower.includes(drug)) return 'cv';
+    }
+    for (let drug of ENDOCRINE) {
+        if (nameLower.includes(drug)) return 'endo';
+    }
+    
+    // Default to skin/misc
+    return 'skin';
+}
 
 
 
@@ -5579,6 +6017,9 @@ function showImportModal() {
         // Extract new data from import
         const systemsData = extractAndFormatSystemsData(importText, labData);
 
+
+
+
         // Merge existing content with new data using bracket logic
         // "( )" sections always refresh, "[ ]" sections preserve existing data
         const mergedData = {};
@@ -5602,28 +6043,39 @@ function showImportModal() {
         patient.SKIN = mergedData.SKIN || patient.SKIN || '';
 
         // Update UI fields if they exist
-        setTimeout(() => {
-            systemFields.forEach(field => {
-                const fieldElem = document.getElementById(`field_${field}`);
-                if (fieldElem && mergedData[field]) {
-                    fieldElem.value = mergedData[field];
-                    if (fieldElem.tagName === 'TEXTAREA') {
-                        autoResizeTextarea(fieldElem);
-                    }
-                }
-            });
-        }, 200);
-    } catch (e) {
-        console.error('Error auto-populating system fields:', e);
-    }
-
-
+      
+// Update UI fields if they exist - FORCE UPDATE
+setTimeout(() => {
+    systemFields.forEach(field => {
+        const fieldElem = document.getElementById(`field_${field}`);
+        if (fieldElem) {
+            // FORCE the new value
+            fieldElem.value = mergedData[field] || '';
+            
+            // Trigger events to ensure update
+            fieldElem.dispatchEvent(new Event('input', { bubbles: true }));
+            fieldElem.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            if (fieldElem.tagName === 'TEXTAREA') {
+                autoResizeTextarea(fieldElem);
+            }
+            
+            console.log(`✅ Updated field: ${field}`);
+        }
+    });
+    
     saveToLocalStorage();
+}, 200);
 
     // Auto-populate Plan field after import
     setTimeout(() => {
         autoPopulatePlan(true); // Pass true to skip confirmation
     }, 100);
+
+}  catch (error) {
+    console.error('Error during import:', error);
+    alert('Error processing import: ' + error.message);
+}
     
 
     closeImportModal();
@@ -6537,11 +6989,8 @@ function toggleOrdersView() {
 
             if (!trimmedLine) return;
 
-            // Use abbreviation function
-            const abbreviated = abbreviateMedLine(trimmedLine);
-            if (!abbreviated) return;
-
-            const displayLine = currentSection === 'PRN' ? `PRN: ${abbreviated}` : abbreviated;
+            // Display the full line instead of abbreviating
+            const displayLine = currentSection === 'PRN' ? `PRN: ${trimmedLine}` : trimmedLine;
             const lineLower = trimmedLine.toLowerCase();
             
             if (lineLower.match(/npo|lactated ringers|normal saline|parenteral|sodium chloride|dextrose|infant formula|pediatric|regular diet|clear liquid|renal|cardiac|diabetic|dysphagia|soft|full liquid|bariatric|albumin/i)) {
@@ -8290,6 +8739,286 @@ fishbone += `Ca:${caStr}, Mg:${mgStr}, P:${phosStr}\n`;
 
 
 
+
+   const GLOBAL_MED_DATABASE = {
+    // Pain medications
+    'hydromorphone': { abbr: 'D', orders: 'Pain', system: 'neuro' },
+    'dilaudid': { abbr: 'D', orders: 'Pain', system: 'neuro' },
+    'oxycodone': { abbr: 'O', orders: 'Pain', system: 'neuro' },
+    'morphine': { abbr: 'M', orders: 'Pain', system: 'neuro' },
+    'fentanyl': { abbr: 'F', orders: 'Pain', system: 'neuro' },
+    'fentanyl citrate': { abbr: 'F', orders: 'Pain', system: 'neuro' },
+    'acetaminophen': { abbr: 'T', orders: 'Pain', system: 'neuro' },
+    'tylenol': { abbr: 'T', orders: 'Pain', system: 'neuro' },
+    'ibuprofen': { abbr: 'Ibu', orders: 'Pain', system: 'neuro' },
+    'ketorolac': { abbr: 'Toradol', orders: 'Pain', system: 'neuro' },
+    'toradol': { abbr: 'Toradol', orders: 'Pain', system: 'neuro' },
+    'tramadol': { abbr: 'Tramadol', orders: 'Pain', system: 'neuro' },
+    'hydrocodone': { abbr: 'Norco', orders: 'Pain', system: 'neuro' },
+    'meperidine': { abbr: 'Demerol', orders: 'Pain', system: 'neuro' },
+    'codeine': { abbr: 'Codeine', orders: 'Pain', system: 'neuro' },
+    'naproxen': { abbr: 'Naproxen', orders: 'Pain', system: 'neuro' },
+    'celecoxib': { abbr: 'Celebrex', orders: 'Pain', system: 'neuro' },
+    
+    // Antibiotics
+    'cefepime': { abbr: 'Cefepime', orders: 'Abx', system: 'antibiotics' },
+    'vancomycin': { abbr: 'Vanc', orders: 'Abx', system: 'antibiotics' },
+    'piperacillin-tazobactam': { abbr: 'Pip-Tazo', orders: 'Abx', system: 'antibiotics' },
+    'piperacillin': { abbr: 'Pip', orders: 'Abx', system: 'antibiotics' },
+    'tazobactam': { abbr: 'Tazo', orders: 'Abx', system: 'antibiotics' },
+    'meropenem': { abbr: 'Mero', orders: 'Abx', system: 'antibiotics' },
+    'imipenem': { abbr: 'Imi', orders: 'Abx', system: 'antibiotics' },
+    'ceftriaxone': { abbr: 'CTX', orders: 'Abx', system: 'antibiotics' },
+    'ceftazidime': { abbr: 'Ceftaz', orders: 'Abx', system: 'antibiotics' },
+    'cefazolin': { abbr: 'Ancef', orders: 'Abx', system: 'antibiotics' },
+    'azithromycin': { abbr: 'Azithro', orders: 'Abx', system: 'antibiotics' },
+    'levofloxacin': { abbr: 'Levo', orders: 'Abx', system: 'antibiotics' },
+    'ciprofloxacin': { abbr: 'Cipro', orders: 'Abx', system: 'antibiotics' },
+    'metronidazole': { abbr: 'Flagyl', orders: 'Abx', system: 'antibiotics' },
+    'daptomycin': { abbr: 'Dapto', orders: 'Abx', system: 'antibiotics' },
+    'eravacycline': { abbr: 'Xerava', orders: 'Abx', system: 'antibiotics' },
+    'micafungin': { abbr: 'Mica', orders: 'Abx', system: 'antibiotics' },
+    'caspofungin': { abbr: 'Caspo', orders: 'Abx', system: 'antibiotics' },
+    'fluconazole': { abbr: 'Fluc', orders: 'Abx', system: 'antibiotics' },
+    'sulfamethoxazole-trimethoprim': { abbr: 'TMP-SMX', orders: 'Abx', system: 'antibiotics' },
+    'sulfamethoxazole': { abbr: 'SMX', orders: 'Abx', system: 'antibiotics' },
+    'trimethoprim': { abbr: 'TMP', orders: 'Abx', system: 'antibiotics' },
+    'linezolid': { abbr: 'Zyvox', orders: 'Abx', system: 'antibiotics' },
+    'clindamycin': { abbr: 'Clinda', orders: 'Abx', system: 'antibiotics' },
+    'ampicillin': { abbr: 'Amp', orders: 'Abx', system: 'antibiotics' },
+    'amoxicillin': { abbr: 'Amox', orders: 'Abx', system: 'antibiotics' },
+    'gentamicin': { abbr: 'Gent', orders: 'Abx', system: 'antibiotics' },
+    'tobramycin': { abbr: 'Tobra', orders: 'Abx', system: 'antibiotics' },
+    'doxycycline': { abbr: 'Doxy', orders: 'Abx', system: 'antibiotics' },
+    'ertapenem': { abbr: 'Ertapenem', orders: 'Abx', system: 'antibiotics' },
+    'erythromycin': { abbr: 'Erythro', orders: 'Abx', system: 'antibiotics' },
+    
+    // Pressors/Sedation
+    'norepinephrine': { abbr: 'Levo', orders: 'Abx', system: 'cv' },
+    'epinephrine': { abbr: 'Epi', orders: 'Abx', system: 'cv' },
+    'vasopressin': { abbr: 'Vaso', orders: 'Abx', system: 'cv' },
+    'phenylephrine': { abbr: 'Neo', orders: 'Abx', system: 'cv' },
+    'dopamine': { abbr: 'Dopa', orders: 'Abx', system: 'cv' },
+    'dobutamine': { abbr: 'Dobu', orders: 'Abx', system: 'cv' },
+    'milrinone': { abbr: 'Milrinone', orders: 'Abx', system: 'cv' },
+    'propofol': { abbr: 'Prop', orders: 'Abx', system: 'neuro' },
+    'midazolam': { abbr: 'Versed', orders: 'Abx', system: 'neuro' },
+    'dexmedetomidine': { abbr: 'Prec', orders: 'Abx', system: 'neuro' },
+    'lorazepam': { abbr: 'Ativan', orders: 'Pain', system: 'neuro' },
+    'diazepam': { abbr: 'Valium', orders: 'Pain', system: 'neuro' },
+    'ketamine': { abbr: 'Ketamine', orders: 'Pain', system: 'neuro' },
+    
+    // Anticoagulation
+    'heparin': { abbr: 'Hep', orders: 'AC', system: 'anticoag' },
+    'enoxaparin': { abbr: 'Lovenox', orders: 'AC', system: 'anticoag' },
+    'lovenox': { abbr: 'Lovenox', orders: 'AC', system: 'anticoag' },
+    'warfarin': { abbr: 'Coumadin', orders: 'AC', system: 'anticoag' },
+    'apixaban': { abbr: 'Eliquis', orders: 'AC', system: 'anticoag' },
+    'rivaroxaban': { abbr: 'Xarelto', orders: 'AC', system: 'anticoag' },
+    'dabigatran': { abbr: 'Pradaxa', orders: 'AC', system: 'anticoag' },
+    'aspirin': { abbr: 'ASA', orders: 'AC', system: 'anticoag' },
+    'clopidogrel': { abbr: 'Plavix', orders: 'AC', system: 'anticoag' },
+    'ticagrelor': { abbr: 'Brilinta', orders: 'AC', system: 'anticoag' },
+    'prasugrel': { abbr: 'Effient', orders: 'AC', system: 'anticoag' },
+    'fondaparinux': { abbr: 'Arixtra', orders: 'AC', system: 'anticoag' },
+    
+    // GI medications
+    'ondansetron': { abbr: 'Z', orders: 'Pain', system: 'gi' },
+    'pantoprazole': { abbr: 'Protonix', orders: 'Pain', system: 'gi' },
+    'famotidine': { abbr: 'Pepcid', orders: 'Pain', system: 'gi' },
+    'omeprazole': { abbr: 'Prilosec', orders: 'Pain', system: 'gi' },
+    'esomeprazole': { abbr: 'Nexium', orders: 'Pain', system: 'gi' },
+    'lansoprazole': { abbr: 'Prevacid', orders: 'Pain', system: 'gi' },
+    'ranitidine': { abbr: 'Zantac', orders: 'Pain', system: 'gi' },
+    'docusate': { abbr: 'Colace', orders: 'Pain', system: 'gi' },
+    'senna': { abbr: 'Senna', orders: 'Pain', system: 'gi' },
+    'bisacodyl': { abbr: 'Dulcolax', orders: 'Pain', system: 'gi' },
+    'polyethylene glycol': { abbr: 'Miralax', orders: 'Pain', system: 'gi' },
+    'metoclopramide': { abbr: 'Reglan', orders: 'Pain', system: 'gi' },
+    'promethazine': { abbr: 'Phenergan', orders: 'Pain', system: 'gi' },
+    'prochlorperazine': { abbr: 'Compazine', orders: 'Pain', system: 'gi' },
+    
+    // Cardio/Pulm medications
+    'metoprolol': { abbr: 'Metop', orders: 'Pain', system: 'cv' },
+    'carvedilol': { abbr: 'Coreg', orders: 'Pain', system: 'cv' },
+    'atenolol': { abbr: 'Atenolol', orders: 'Pain', system: 'cv' },
+    'labetalol': { abbr: 'Labetalol', orders: 'Pain', system: 'cv' },
+    'esmolol': { abbr: 'Esmolol', orders: 'Pain', system: 'cv' },
+    'lisinopril': { abbr: 'Lisinopril', orders: 'Pain', system: 'cv' },
+    'enalapril': { abbr: 'Enalapril', orders: 'Pain', system: 'cv' },
+    'captopril': { abbr: 'Captopril', orders: 'Pain', system: 'cv' },
+    'losartan': { abbr: 'Losartan', orders: 'Pain', system: 'cv' },
+    'valsartan': { abbr: 'Valsartan', orders: 'Pain', system: 'cv' },
+    'amlodipine': { abbr: 'Norvasc', orders: 'Pain', system: 'cv' },
+    'diltiazem': { abbr: 'Cardizem', orders: 'Abx', system: 'cv' },
+    'nicardipine': { abbr: 'Cardene', orders: 'Abx', system: 'cv' },
+    'hydralazine': { abbr: 'Hydral', orders: 'Pain', system: 'cv' },
+    'furosemide': { abbr: 'Lasix', orders: 'Pain', system: 'cv' },
+    'bumetanide': { abbr: 'Bumex', orders: 'Pain', system: 'cv' },
+    'torsemide': { abbr: 'Torsemide', orders: 'Pain', system: 'cv' },
+    'spironolactone': { abbr: 'Spiro', orders: 'Pain', system: 'cv' },
+    'albuterol': { abbr: 'Alb', orders: 'Pain', system: 'pulm' },
+    'ipratropium': { abbr: 'Atro', orders: 'Pain', system: 'pulm' },
+    'albuterol-ipratropium': { abbr: 'DuoNeb', orders: 'Pain', system: 'pulm' },
+    'nitroglycerin': { abbr: 'NTG', orders: 'Pain', system: 'cv' },
+    'isosorbide': { abbr: 'Imdur', orders: 'Pain', system: 'cv' },
+    'digoxin': { abbr: 'Dig', orders: 'Pain', system: 'cv' },
+    'amiodarone': { abbr: 'Amio', orders: 'Abx', system: 'cv' },
+    'sotalol': { abbr: 'Sotalol', orders: 'Pain', system: 'cv' },
+    'flecainide': { abbr: 'Flec', orders: 'Pain', system: 'cv' },
+    
+    // Statins
+    'rosuvastatin': { abbr: 'Crestor', orders: 'Pain', system: 'cv' },
+    'atorvastatin': { abbr: 'Lipitor', orders: 'Pain', system: 'cv' },
+    'simvastatin': { abbr: 'Zocor', orders: 'Pain', system: 'cv' },
+    'pravastatin': { abbr: 'Pravachol', orders: 'Pain', system: 'cv' },
+    'lovastatin': { abbr: 'Mevacor', orders: 'Pain', system: 'cv' },
+    'fluvastatin': { abbr: 'Lescol', orders: 'Pain', system: 'cv' },
+    'pitavastatin': { abbr: 'Livalo', orders: 'Pain', system: 'cv' },
+    
+    // Neuro/Psych medications
+    'levetiracetam': { abbr: 'Keppra', orders: 'Pain', system: 'neuro' },
+    'phenytoin': { abbr: 'Dilantin', orders: 'Pain', system: 'neuro' },
+    'valproic acid': { abbr: 'Depakote', orders: 'Pain', system: 'neuro' },
+    'carbamazepine': { abbr: 'Tegretol', orders: 'Pain', system: 'neuro' },
+    'lamotrigine': { abbr: 'Lamictal', orders: 'Pain', system: 'neuro' },
+    'topiramate': { abbr: 'Topamax', orders: 'Pain', system: 'neuro' },
+    'gabapentin': { abbr: 'Neurontin', orders: 'Pain', system: 'neuro' },
+    'neurontin': { abbr: 'Neurontin', orders: 'Pain', system: 'neuro' },
+    'pregabalin': { abbr: 'Lyrica', orders: 'Pain', system: 'neuro' },
+    'lacosamide': { abbr: 'Vimpat', orders: 'Pain', system: 'neuro' },
+    'haloperidol': { abbr: 'Haldol', orders: 'Pain', system: 'neuro' },
+    'quetiapine': { abbr: 'Seroquel', orders: 'Pain', system: 'neuro' },
+    'olanzapine': { abbr: 'Zyprexa', orders: 'Pain', system: 'neuro' },
+    'risperidone': { abbr: 'Risperdal', orders: 'Pain', system: 'neuro' },
+    'aripiprazole': { abbr: 'Abilify', orders: 'Pain', system: 'neuro' },
+    'ziprasidone': { abbr: 'Geodon', orders: 'Pain', system: 'neuro' },
+    'clozapine': { abbr: 'Clozaril', orders: 'Pain', system: 'neuro' },
+    'lithium': { abbr: 'Lithium', orders: 'Pain', system: 'neuro' },
+    'valproate': { abbr: 'Depakote', orders: 'Pain', system: 'neuro' },
+    'sertraline': { abbr: 'Zoloft', orders: 'Pain', system: 'neuro' },
+    'escitalopram': { abbr: 'Lexapro', orders: 'Pain', system: 'neuro' },
+    'fluoxetine': { abbr: 'Prozac', orders: 'Pain', system: 'neuro' },
+    'paroxetine': { abbr: 'Paxil', orders: 'Pain', system: 'neuro' },
+    'citalopram': { abbr: 'Celexa', orders: 'Pain', system: 'neuro' },
+    'venlafaxine': { abbr: 'Effexor', orders: 'Pain', system: 'neuro' },
+    'duloxetine': { abbr: 'Cymbalta', orders: 'Pain', system: 'neuro' },
+    'bupropion': { abbr: 'Wellbutrin', orders: 'Pain', system: 'neuro' },
+    'mirtazapine': { abbr: 'Remeron', orders: 'Pain', system: 'neuro' },
+    'trazodone': { abbr: 'Trazodone', orders: 'Pain', system: 'neuro' },
+    'clonazepam': { abbr: 'Klonopin', orders: 'Pain', system: 'neuro' },
+    'alprazolam': { abbr: 'Xanax', orders: 'Pain', system: 'neuro' },
+    'cyclobenzaprine': { abbr: 'Flexeril', orders: 'Pain', system: 'neuro' },
+    'baclofen': { abbr: 'Baclofen', orders: 'Pain', system: 'neuro' },
+    'methocarbamol': { abbr: 'Robaxin', orders: 'Pain', system: 'neuro' },
+    'robaxin': { abbr: 'Robaxin', orders: 'Pain', system: 'neuro' },
+    'lidocaine': { abbr: 'Lido', orders: 'Pain', system: 'neuro' },
+    
+    // Endocrine
+    'insulin lispro': { abbr: 'Lispro', orders: 'Pain', system: 'endo' },
+    'insulin aspart': { abbr: 'Aspart', orders: 'Pain', system: 'endo' },
+    'insulin regular': { abbr: 'Reg insulin', orders: 'Pain', system: 'endo' },
+    'insulin isophane': { abbr: 'NPH', orders: 'Pain', system: 'endo' },
+    'insulin glargine': { abbr: 'Lantus', orders: 'Pain', system: 'endo' },
+    'insulin detemir': { abbr: 'Levemir', orders: 'Pain', system: 'endo' },
+    'insulin degludec': { abbr: 'Tresiba', orders: 'Pain', system: 'endo' },
+    'levothyroxine': { abbr: 'Synthroid', orders: 'Pain', system: 'endo' },
+    'liothyronine': { abbr: 'Cytomel', orders: 'Pain', system: 'endo' },
+    'hydrocortisone': { abbr: 'Solu-Cortef', orders: 'Pain', system: 'endo' },
+    'dexamethasone': { abbr: 'Decadron', orders: 'Pain', system: 'endo' },
+    
+    // Others
+    'tacrolimus': { abbr: 'Tacro', orders: 'Pain', system: 'renal' },
+    'cyclosporine': { abbr: 'Cyclo', orders: 'Pain', system: 'renal' },
+    'mycophenolate': { abbr: 'CellCept', orders: 'Pain', system: 'renal' },
+    'prednisone': { abbr: 'Pred', orders: 'Pain', system: 'renal' },
+    'methylprednisolone': { abbr: 'Solumedrol', orders: 'Pain', system: 'renal' },
+    'valganciclovir': { abbr: 'Valcyte', orders: 'Pain', system: 'antibiotics' },
+    'ganciclovir': { abbr: 'Ganciclovir', orders: 'Pain', system: 'antibiotics' },
+    'acyclovir': { abbr: 'Acyclovir', orders: 'Pain', system: 'antibiotics' },
+    'valacyclovir': { abbr: 'Valtrex', orders: 'Pain', system: 'antibiotics' },
+    'entecavir': { abbr: 'Baraclude', orders: 'Pain', system: 'antibiotics' },
+    'nystatin': { abbr: 'Nystatin', orders: 'Pain', system: 'antibiotics' },
+    'thiamine': { abbr: 'Thiamine', orders: 'Pain', system: 'renal' },
+    'folic acid': { abbr: 'Folate', orders: 'Pain', system: 'renal' },
+    'cholecalciferol': { abbr: 'Vit D', orders: 'Pain', system: 'renal' },
+    'cyanocobalamin': { abbr: 'B12', orders: 'Pain', system: 'renal' },
+    'zinc sulfate': { abbr: 'Zinc', orders: 'Pain', system: 'renal' },
+    'magnesium sulfate': { abbr: 'Mag', orders: 'Pain', system: 'renal' },
+    'potassium chloride': { abbr: 'K', orders: 'Pain', system: 'renal' },
+    'calcium gluconate': { abbr: 'Ca', orders: 'Pain', system: 'renal' },
+    'calcium carbonate': { abbr: 'CaCO3', orders: 'Pain', system: 'renal' },
+    'ursodiol': { abbr: 'Urso', orders: 'Pain', system: 'gi' },
+    'romiplostim': { abbr: 'Nplate', orders: 'Pain', system: 'renal' },
+    'filgrastim': { abbr: 'Neupogen', orders: 'Pain', system: 'renal' },
+    'epoetin': { abbr: 'Epogen', orders: 'Pain', system: 'renal' },
+    
+    // Fluids
+    'lactated ringers': { abbr: 'LR', orders: 'N/F', system: 'ivf' },
+    'lactated ringer': { abbr: 'LR', orders: 'N/F', system: 'ivf' },
+    'normal saline': { abbr: 'NS', orders: 'N/F', system: 'ivf' },
+    'sodium chloride 0.9%': { abbr: 'NS', orders: 'N/F', system: 'ivf' },
+    'sodium chloride 0.45%': { abbr: '1/2NS', orders: 'N/F', system: 'ivf' },
+    'sodium chloride': { abbr: 'NS', orders: 'N/F', system: 'ivf' },
+    'dextrose': { abbr: 'D', orders: 'N/F', system: 'ivf' },
+    'd5w': { abbr: 'D5W', orders: 'N/F', system: 'ivf' },
+    'dextrose 5%': { abbr: 'D5W', orders: 'N/F', system: 'ivf' },
+    'd5ns': { abbr: 'D5NS', orders: 'N/F', system: 'ivf' },
+    'albumin': { abbr: 'Albumin', orders: 'N/F', system: 'ivf' },
+    'immunoglobulin': { abbr: 'IVIG', orders: 'N/F', system: 'ivf' },
+    'parenteral nutrition': { abbr: 'TPN', orders: 'N/F', system: 'diet' },
+    'total parenteral nutrition': { abbr: 'TPN', orders: 'N/F', system: 'diet' },
+    'tpn': { abbr: 'TPN', orders: 'N/F', system: 'diet' },
+    'peripheral parenteral nutrition': { abbr: 'PPN', orders: 'N/F', system: 'diet' },
+    'ppn': { abbr: 'PPN', orders: 'N/F', system: 'diet' },
+    'fat emulsion': { abbr: 'Lipids', orders: 'N/F', system: 'diet' },
+    'smoflipid': { abbr: 'Lipids', orders: 'N/F', system: 'diet' }
+};
+
+
+
+
+// Helper function: Find medication using CASE-INSENSITIVE longest match
+function findMedicationInDatabase(text) {
+    const textLower = text.toLowerCase();
+    let bestMatch = null;
+    let longestMatchLength = 0;
+    
+    for (const [medName, medInfo] of Object.entries(GLOBAL_MED_DATABASE)) {
+        if (textLower.includes(medName.toLowerCase()) && medName.length > longestMatchLength) {
+            bestMatch = { name: medName, ...medInfo };
+            longestMatchLength = medName.length;
+        }
+    }
+    
+    return bestMatch;
+}
+
+// Helper function: Detect if line is a continuous infusion
+function isContinuousInfusion(line) {
+    const lineLower = line.toLowerCase();
+    return lineLower.includes('iv continuous') || 
+           lineLower.includes('continuous') || 
+           lineLower.match(/\d+\s*ml\/hr/i);
+}
+
+// Helper function: Detect insulin sliding scale
+function isInsulinSlidingScale(line) {
+    const lineLower = line.toLowerCase();
+    return lineLower.includes('sliding scale') || 
+           lineLower.match(/insulin.*sliding|sliding.*insulin/i);
+}
+
+
+
+
+
+
+
+
+
+
+
 function extractOrders(text) {
     // Extract medications section
     const medsMatch = text.match(/Medications.*?\(\d+\)\s*Active([\s\S]*?)(?=(?:\n\n)?(?:DIET ORDER:|CONSULTATION:|PROCEDURE:|IMAGING:|LABS:|$))/i);
@@ -8322,246 +9051,161 @@ function extractOrders(text) {
         'AC': []
     };
 
-    // COMPREHENSIVE MEDICATION ABBREVIATION TABLE
-    const drugAbbreviations = {
-        // Pain medications
-        'hydromorphone': { abbr: 'D', category: 'Pain' },
-        'dilaudid': { abbr: 'D', category: 'Pain' },
-        'oxycodone': { abbr: 'O', category: 'Pain' },
-        'oxyCODONE': { abbr: 'O', category: 'Pain' },
-        'percocet': { abbr: 'O', category: 'Pain' },
-        'morphine': { abbr: 'M', category: 'Pain' },
-        'fentanyl': { abbr: 'F', category: 'Pain' },
-        'fentanyl citrate': { abbr: 'F', category: 'Pain' },
-        'fentaNYL': { abbr: 'F', category: 'Pain' },
-        'acetaminophen': { abbr: 'T', category: 'Pain' },
-        'tylenol': { abbr: 'T', category: 'Pain' },
-        'ibuprofen': { abbr: 'Ibu', category: 'Pain' },
-        'ketorolac': { abbr: 'Toradol', category: 'Pain' },
-        'toradol': { abbr: 'Toradol', category: 'Pain' },
-        'tramadol': { abbr: 'Tramadol', category: 'Pain' },
-        'hydrocodone': { abbr: 'Norco', category: 'Pain' },
-        'meperidine': { abbr: 'Demerol', category: 'Pain' },
-        'codeine': { abbr: 'Codeine', category: 'Pain' },
+    // Process diet order
+    if (dietMatch) {
+        const diet = dietMatch[1].trim().toLowerCase();
+        const dietMap = {
+            'npo': 'NPO',
+            'nothing by mouth': 'NPO',
+            'regular': 'RD',
+            'general': 'RD',
+            'clear liquid': 'CLD',
+            'full liquid': 'FLD',
+            'renal': 'renal',
+            'cardiac': 'cardiac',
+            'diabetic': 'DM diet',
+            'diabetes': 'DM diet',
+            'soft': 'soft',
+            'mechanical soft': 'mech soft',
+            'pureed': 'puree',
+            'dysphagia': 'dysphagia',
+            'IDDSI': 'IDDSI',
+            'Pediatric': 'pediatric'
+        };
+        
+        for (const [key, value] of Object.entries(dietMap)) {
+            if (diet.includes(key)) {
+                orders['N/F'].push(value);
+                break;
+            }
+        }
+    }
+    
+    // Process medications
+    const medLines = medsText.split('\n').filter(line => line.trim());
+    const processedMeds = new Set();
+    
+    medLines.forEach(line => {
+        const lineLower = line.toLowerCase();
 
-        // Antibiotics
-        'cefepime': { abbr: 'Cefepime', category: 'Abx' },
-        'vancomycin': { abbr: 'Vanc', category: 'Abx' },
-        'piperacillin-tazobactam': { abbr: 'Pip-Tazo', category: 'Abx' },
-        'piperacillin': { abbr: 'Pip', category: 'Abx' },
-        'tazobactam': { abbr: 'Tazo', category: 'Abx' },
-        'meropenem': { abbr: 'Mero', category: 'Abx' },
-        'imipenem': { abbr: 'Imi', category: 'Abx' },
-        'ceftriaxone': { abbr: 'CTX', category: 'Abx' },
-        'ceftazidime': { abbr: 'Ceftaz', category: 'Abx' },
-        'cefazolin': { abbr: 'Ancef', category: 'Abx' },
-        'azithromycin': { abbr: 'Azithro', category: 'Abx' },
-        'levofloxacin': { abbr: 'Levo', category: 'Abx' },
-        'ciprofloxacin': { abbr: 'Cipro', category: 'Abx' },
-        'metronidazole': { abbr: 'Flagyl', category: 'Abx' },
-        'daptomycin': { abbr: 'Dapto', category: 'Abx' },
-        'eravacycline': { abbr: 'Xerava', category: 'Abx' },
-        'micafungin': { abbr: 'Mica', category: 'Abx' },
-        'caspofungin': { abbr: 'Caspo', category: 'Abx' },
-        'fluconazole': { abbr: 'Fluc', category: 'Abx' },
-        'sulfamethoxazole-trimethoprim': { abbr: 'TMP-SMX', category: 'Abx' },
-        'sulfamethoxazole': { abbr: 'SMX', category: 'Abx' },
-        'trimethoprim': { abbr: 'TMP', category: 'Abx' },
-        'linezolid': { abbr: 'Zyvox', category: 'Abx' },
-        'clindamycin': { abbr: 'Clinda', category: 'Abx' },
-        'ampicillin': { abbr: 'Amp', category: 'Abx' },
-        'amoxicillin': { abbr: 'Amox', category: 'Abx' },
-        'gentamicin': { abbr: 'Gent', category: 'Abx' },
-        'tobramycin': { abbr: 'Tobra', category: 'Abx' },
-        'doxycycline': { abbr: 'Doxy', category: 'Abx' },
-        'ertapenem': { abbr: 'Ertapenem', category: 'Abx' },
+        // Skip header lines
+        if (lineLower.includes('scheduled:') ||
+            lineLower.includes('prn:') ||
+            lineLower.includes('continuous:') ||
+            line.trim().length < 3) {
+            return;
+        }
 
-        // Pressors/Sedation
-        'norepinephrine': { abbr: 'Levo', category: 'Abx' },
-        'norEPINEPHrine': { abbr: 'Levo', category: 'Abx' },
-        'epinephrine': { abbr: 'Epi', category: 'Abx' },
-        'EPINEPHrine': { abbr: 'Epi', category: 'Abx' },
-        'vasopressin': { abbr: 'Vaso', category: 'Abx' },
-        'phenylephrine': { abbr: 'Neo', category: 'Abx' },
-        'dopamine': { abbr: 'Dopa', category: 'Abx' },
-        'DOPamine': { abbr: 'Dopa', category: 'Abx' },
-        'dobutamine': { abbr: 'Dobu', category: 'Abx' },
-        'propofol': { abbr: 'Prop', category: 'Abx' },
-        'midazolam': { abbr: 'Versed', category: 'Abx' },
-        'dexmedetomidine': { abbr: 'Prec', category: 'Abx' },
-        'dexmedeTOMIDine': { abbr: 'Prec', category: 'Abx' },
-        'lorazepam': { abbr: 'Ativan', category: 'Abx' },
-        'diazepam': { abbr: 'Valium', category: 'Abx' },
-        'ketamine': { abbr: 'Ketamine', category: 'Abx' },
+        // Check for insulin sliding scale FIRST
+        if (isInsulinSlidingScale(line)) {
+            const abbr = 'ISS-N';
+            if (!processedMeds.has(abbr)) {
+                orders['Pain'].push(abbr);
+                processedMeds.add(abbr);
+            }
+            return;
+        }
 
-        // Anticoagulation
-        'heparin': { abbr: 'Hep', category: 'AC' },
-        'enoxaparin': { abbr: 'Lovenox', category: 'AC' },
-        'lovenox': { abbr: 'Lovenox', category: 'AC' },
-        'warfarin': { abbr: 'Coumadin', category: 'AC' },
-        'apixaban': { abbr: 'Eliquis', category: 'AC' },
-        'rivaroxaban': { abbr: 'Xarelto', category: 'AC' },
-        'dabigatran': { abbr: 'Pradaxa', category: 'AC' },
-        'aspirin': { abbr: 'ASA', category: 'AC' },
-        'clopidogrel': { abbr: 'Plavix', category: 'AC' },
-        'ticagrelor': { abbr: 'Brilinta', category: 'AC' },
-        'prasugrel': { abbr: 'Effient', category: 'AC' },
-        'fondaparinux': { abbr: 'Arixtra', category: 'AC' },
+        // Find matching drug using CASE-INSENSITIVE search
+        const medInfo = findMedicationInDatabase(line);
+        
+        if (medInfo) {
+            const { dose, freq } = extractDoseInfo(line);
 
-        // GI medications (will appear in Misc or other categories as processed)
-        'ondansetron': { abbr: 'Z', category: 'Pain' },
-        'pantoprazole': { abbr: 'Protonix', category: 'Pain' },
-        'famotidine': { abbr: 'Pepcid', category: 'Pain' },
-        'omeprazole': { abbr: 'Prilosec', category: 'Pain' },
-        'esomeprazole': { abbr: 'Nexium', category: 'Pain' },
-        'lansoprazole': { abbr: 'Prevacid', category: 'Pain' },
-        'ranitidine': { abbr: 'Zantac', category: 'Pain' },
-        'docusate': { abbr: 'Colace', category: 'Pain' },
-        'senna': { abbr: 'Senna', category: 'Pain' },
-        'bisacodyl': { abbr: 'Dulcolax', category: 'Pain' },
-        'polyethylene glycol': { abbr: 'Miralax', category: 'Pain' },
-        'metoclopramide': { abbr: 'Reglan', category: 'Pain' },
-        'promethazine': { abbr: 'Phenergan', category: 'Pain' },
-        'prochlorperazine': { abbr: 'Compazine', category: 'Pain' },
+            // Detect route
+            let route = '';
+            if (lineLower.includes('po ') || lineLower.includes('oral') || lineLower.includes('by mouth')) {
+                route = 'PO';
+            } else if (lineLower.includes('iv ') || lineLower.includes('intravenous')) {
+                route = 'IV';
+            } else if (lineLower.includes('im ') || lineLower.includes('intramuscular')) {
+                route = 'IM';
+            } else if (lineLower.includes('sq ') || lineLower.includes('subcutaneous') || lineLower.includes('subcut')) {
+                route = 'SQ';
+            } else if (lineLower.includes('neb') || lineLower.includes('nebulizer')) {
+                route = 'NEB';
+            }
 
-        // Cardio/Pulm medications
-        'metoprolol': { abbr: 'Metop', category: 'Pain' },
-        'carvedilol': { abbr: 'Coreg', category: 'Pain' },
-        'atenolol': { abbr: 'Atenolol', category: 'Pain' },
-        'labetalol': { abbr: 'Labetalol', category: 'Pain' },
-        'esmolol': { abbr: 'Esmolol', category: 'Pain' },
-        'lisinopril': { abbr: 'Lisinopril', category: 'Pain' },
-        'enalapril': { abbr: 'Enalapril', category: 'Pain' },
-        'captopril': { abbr: 'Captopril', category: 'Pain' },
-        'losartan': { abbr: 'Losartan', category: 'Pain' },
-        'valsartan': { abbr: 'Valsartan', category: 'Pain' },
-        'amlodipine': { abbr: 'Norvasc', category: 'Pain' },
-        'diltiazem': { abbr: 'Cardizem', category: 'Abx' },
-        'nicardipine': { abbr: 'Cardene', category: 'Abx' },
-        'niCARdipine': { abbr: 'Cardene', category: 'Abx' },
-        'hydralazine': { abbr: 'Hydral', category: 'Pain' },
-        'furosemide': { abbr: 'Lasix', category: 'Pain' },
-        'bumetanide': { abbr: 'Bumex', category: 'Pain' },
-        'torsemide': { abbr: 'Torsemide', category: 'Pain' },
-        'spironolactone': { abbr: 'Spiro', category: 'Pain' },
-        'albuterol': { abbr: 'Alb', category: 'Pain' },
-        'ipratropium': { abbr: 'Atro', category: 'Pain' },
-        'albuterol-ipratropium': { abbr: 'DuoNeb', category: 'Pain' },
-        'nitroglycerin': { abbr: 'NTG', category: 'Pain' },
-        'isosorbide': { abbr: 'Imdur', category: 'Pain' },
-        'digoxin': { abbr: 'Dig', category: 'Pain' },
-        'amiodarone': { abbr: 'Amio', category: 'Abx' },
-        'sotalol': { abbr: 'Sotalol', category: 'Pain' },
-        'flecainide': { abbr: 'Flec', category: 'Pain' },
+            // Detect PRN
+            let isPRN = lineLower.includes('prn') || lineLower.includes('as needed');
 
-        // Statins
-        'rosuvastatin': { abbr: 'Crestor', category: 'Pain' },
-        'atorvastatin': { abbr: 'Lipitor', category: 'Pain' },
-        'simvastatin': { abbr: 'Zocor', category: 'Pain' },
-        'pravastatin': { abbr: 'Pravachol', category: 'Pain' },
-        'lovastatin': { abbr: 'Mevacor', category: 'Pain' },
-        'fluvastatin': { abbr: 'Lescol', category: 'Pain' },
-        'pitavastatin': { abbr: 'Livalo', category: 'Pain' },
+            // Detect continuous infusion
+            let isContinuous = isContinuousInfusion(line);
 
-        // Neuro/Psych medications
-        'levetiracetam': { abbr: 'Keppra', category: 'Pain' },
-        'phenytoin': { abbr: 'Dilantin', category: 'Pain' },
-        'valproic acid': { abbr: 'Depakote', category: 'Pain' },
-        'carbamazepine': { abbr: 'Tegretol', category: 'Pain' },
-        'lamotrigine': { abbr: 'Lamictal', category: 'Pain' },
-        'topiramate': { abbr: 'Topamax', category: 'Pain' },
-        'gabapentin': { abbr: 'Neurontin', category: 'Pain' },
-        'neurontin': { abbr: 'Neurontin', category: 'Pain' },
-        'pregabalin': { abbr: 'Lyrica', category: 'Pain' },
-        'lacosamide': { abbr: 'Vimpat', category: 'Pain' },
-        'haloperidol': { abbr: 'Haldol', category: 'Pain' },
-        'quetiapine': { abbr: 'Seroquel', category: 'Pain' },
-        'olanzapine': { abbr: 'Zyprexa', category: 'Pain' },
-        'risperidone': { abbr: 'Risperdal', category: 'Pain' },
-        'aripiprazole': { abbr: 'Abilify', category: 'Pain' },
-        'ziprasidone': { abbr: 'Geodon', category: 'Pain' },
-        'clozapine': { abbr: 'Clozaril', category: 'Pain' },
-        'lithium': { abbr: 'Lithium', category: 'Pain' },
-        'valproate': { abbr: 'Depakote', category: 'Pain' },
-        'sertraline': { abbr: 'Zoloft', category: 'Pain' },
-        'escitalopram': { abbr: 'Lexapro', category: 'Pain' },
-        'fluoxetine': { abbr: 'Prozac', category: 'Pain' },
-        'paroxetine': { abbr: 'Paxil', category: 'Pain' },
-        'citalopram': { abbr: 'Celexa', category: 'Pain' },
-        'venlafaxine': { abbr: 'Effexor', category: 'Pain' },
-        'duloxetine': { abbr: 'Cymbalta', category: 'Pain' },
-        'bupropion': { abbr: 'Wellbutrin', category: 'Pain' },
-        'mirtazapine': { abbr: 'Remeron', category: 'Pain' },
-        'trazodone': { abbr: 'Trazodone', category: 'Pain' },
-        'clonazepam': { abbr: 'Klonopin', category: 'Pain' },
-        'alprazolam': { abbr: 'Xanax', category: 'Pain' },
-        'cyclobenzaprine': { abbr: 'Flexeril', category: 'Pain' },
-        'baclofen': { abbr: 'Baclofen', category: 'Pain' },
-        'methocarbamol': { abbr: 'Robaxin', category: 'Pain' },
-        'robaxin': { abbr: 'Robaxin', category: 'Pain' },
-        'lidocaine': { abbr: 'Lido', category: 'Pain' },
-        'naproxen': { abbr: 'Naproxen', category: 'Pain' },
-        'celecoxib': { abbr: 'Celebrex', category: 'Pain' },
+            // Build abbreviation
+            let abbr = medInfo.abbr;
 
-        // Endocrine
-        'insulin lispro': { abbr: 'Lispro', category: 'Pain' },
-        'insulin aspart': { abbr: 'Aspart', category: 'Pain' },
-        'insulin regular': { abbr: 'Reg insulin', category: 'Pain' },
-        'insulin isophane': { abbr: 'NPH', category: 'Pain' },
-        'insulin glargine': { abbr: 'Lantus', category: 'Pain' },
-        'insulin detemir': { abbr: 'Levemir', category: 'Pain' },
-        'insulin degludec': { abbr: 'Tresiba', category: 'Pain' },
-        'levothyroxine': { abbr: 'Synthroid', category: 'Pain' },
-        'liothyronine': { abbr: 'Cytomel', category: 'Pain' },
-        'hydrocortisone': { abbr: 'Solu-Cortef', category: 'Pain' },
-        'dexamethasone': { abbr: 'Decadron', category: 'Pain' },
+            // Special formatting for acetaminophen
+            if (medInfo.name.includes('acetaminophen') || medInfo.name.includes('tylenol')) {
+                if (dose === '975') {
+                    abbr = 'T975';
+                } else if (dose === '1000') {
+                    abbr = 'T1000';
+                } else if (dose) {
+                    abbr = `T${dose}`;
+                }
+            } else if (isContinuous) {
+                // For continuous infusions, use "gtt" instead of dose/freq
+                abbr = `${medInfo.abbr} gtt`;
+            } else {
+                // Standard formatting for other meds
+                if (dose && freq) {
+                    abbr = `${medInfo.abbr} ${dose} ${freq}`;
+                } else if (dose) {
+                    abbr = `${medInfo.abbr} ${dose}`;
+                } else if (freq) {
+                    abbr = `${medInfo.abbr} ${freq}`;
+                }
+            }
 
-        // Others
-        'tacrolimus': { abbr: 'Tacro', category: 'Pain' },
-        'cyclosporine': { abbr: 'Cyclo', category: 'Pain' },
-        'mycophenolate': { abbr: 'CellCept', category: 'Pain' },
-        'prednisone': { abbr: 'Pred', category: 'Pain' },
-        'methylprednisolone': { abbr: 'Solumedrol', category: 'Pain' },
-        'valganciclovir': { abbr: 'Valcyte', category: 'Pain' },
-        'ganciclovir': { abbr: 'Ganciclovir', category: 'Pain' },
-        'acyclovir': { abbr: 'Acyclovir', category: 'Pain' },
-        'valacyclovir': { abbr: 'Valtrex', category: 'Pain' },
-        'entecavir': { abbr: 'Baraclude', category: 'Pain' },
-        'nystatin': { abbr: 'Nystatin', category: 'Pain' },
-        'thiamine': { abbr: 'Thiamine', category: 'Pain' },
-        'folic acid': { abbr: 'Folate', category: 'Pain' },
-        'cholecalciferol': { abbr: 'Vit D', category: 'Pain' },
-        'cyanocobalamin': { abbr: 'B12', category: 'Pain' },
-        'zinc sulfate': { abbr: 'Zinc', category: 'Pain' },
-        'magnesium sulfate': { abbr: 'Mag', category: 'Pain' },
-        'potassium chloride': { abbr: 'K', category: 'Pain' },
-        'calcium gluconate': { abbr: 'Ca', category: 'Pain' },
-        'calcium carbonate': { abbr: 'CaCO3', category: 'Pain' },
-        'erythromycin': { abbr: 'Erythro', category: 'Abx' },
-        'ursodiol': { abbr: 'Urso', category: 'Pain' },
-        'romiplostim': { abbr: 'Nplate', category: 'Pain' },
-        'filgrastim': { abbr: 'Neupogen', category: 'Pain' },
-        'epoetin': { abbr: 'Epogen', category: 'Pain' },
-        'milrinone': { abbr: 'Milrinone', category: 'Abx' },
+            // Add route if present
+            if (route) {
+                abbr += ` ${route}`;
+            }
 
-        // Fluids
-        'lactated ringers': { abbr: 'LR', category: 'N/F' },
-        'normal saline': { abbr: 'NS', category: 'N/F' },
-        'sodium chloride': { abbr: 'NS', category: 'N/F' },
-        'dextrose': { abbr: 'D', category: 'N/F' },
-        'd5w': { abbr: 'D5W', category: 'N/F' },
-        'd5ns': { abbr: 'D5NS', category: 'N/F' },
-        'albumin': { abbr: 'Albumin', category: 'N/F' },
-        'immunoglobulin': { abbr: 'IVIG', category: 'N/F' },
-        'parenteral nutrition': { abbr: 'TPN', category: 'N/F' },
-        'total parenteral nutrition': { abbr: 'TPN', category: 'N/F' },
-        'tpn': { abbr: 'TPN', category: 'N/F' },
-        'peripheral parenteral nutrition': { abbr: 'PPN', category: 'N/F' },
-        'ppn': { abbr: 'PPN', category: 'N/F' },
-    };
+            // Add PRN if present
+            if (isPRN) {
+                abbr += ' PRN';
+            }
 
+            // Add asterisks around IV pain medications
+            if (medInfo.orders === 'Pain' && route === 'IV') {
+                abbr = `*${abbr}*`;
+            }
 
-
+            if (!processedMeds.has(abbr)) {
+                orders[medInfo.orders].push(abbr);
+                processedMeds.add(abbr);
+            }
+        } else {
+            // Special handling for fluids with rates (if not found in database)
+            if (lineLower.includes('ml/hr') || lineLower.includes('ml per hour')) {
+                const rateMatch = line.match(/(\d+)\s*mL\/hr/i);
+                if (rateMatch) {
+                    const rate = rateMatch[1];
+                    if (lineLower.includes('lactated ringer')) {
+                        orders['N/F'].push(`LR@${rate}`);
+                    } else if (lineLower.includes('normal saline') || lineLower.includes('0.9%')) {
+                        orders['N/F'].push(`NS@${rate}`);
+                    } else if (lineLower.includes('d5w')) {
+                        orders['N/F'].push(`D5W@${rate}`);
+                    }
+                }
+            }
+        }
+    });
+    
+    // Format final orders
+    const formattedOrders = [];
+    formattedOrders.push(`N/F: ${orders['N/F'].length > 0 ? orders['N/F'].join(', ') : ''}`);
+    formattedOrders.push(`Pain: ${orders['Pain'].length > 0 ? orders['Pain'].join(', ') : ''}`);
+    formattedOrders.push(existingLTD ? `LTD: ${existingLTD}` : `LTD:`);
+    formattedOrders.push(`Abx: ${orders['Abx'].length > 0 ? orders['Abx'].join(', ') : ''}`);
+    formattedOrders.push(`AC: ${orders['AC'].length > 0 ? orders['AC'].join(', ') : '*NO DVT PPX*'}`);
+    formattedOrders.push(`dispo: ${existingDispo}`);
+    
+    return formattedOrders.join('\n');
+}
 
 
 
@@ -8722,161 +9366,583 @@ function extractDoseInfo(line) {
 }
 
 
+// =============================================================================
+// WORKING MEDICATION ABBREVIATION SYSTEM
+// =============================================================================
 
+// 1. COMPREHENSIVE MEDICATION ABBREVIATION DATABASE
+const MED_ABBREVIATIONS = {
+    // Pain medications
+    'hydromorphone': 'D',
+    'oxycodone': 'O',
+    'morphine': 'M',
+    'fentanyl': 'F',
+    'fentanyl citrate': 'F',
+    'acetaminophen': 'T',
+    'ibuprofen': 'Ibu',
+    'ketorolac': 'Toradol',
+    'tramadol': 'Tramadol',
+    'hydrocodone': 'Norco',
+    'meperidine': 'Demerol',
+    'codeine': 'Codeine',
+    
+    // Antibiotics
+    'cefepime': 'Cefepime',
+    'vancomycin': 'Vanc',
+    'piperacillin-tazobactam': 'Pip-Tazo',
+    'piperacillin': 'Pip',
+    'tazobactam': 'Tazo',
+    'meropenem': 'Mero',
+    'imipenem': 'Imi',
+    'ceftriaxone': 'CTX',
+    'ceftazidime': 'Ceftaz',
+    'cefazolin': 'Ancef',
+    'azithromycin': 'Azithro',
+    'levofloxacin': 'Levo',
+    'ciprofloxacin': 'Cipro',
+    'metronidazole': 'Flagyl',
+    'daptomycin': 'Dapto',
+    'micafungin': 'Mica',
+    'caspofungin': 'Caspo',
+    'fluconazole': 'Fluc',
+    'sulfamethoxazole-trimethoprim': 'TMP-SMX',
+    'sulfamethoxazole': 'SMX',
+    'trimethoprim': 'TMP',
+    'linezolid': 'Zyvox',
+    'clindamycin': 'Clinda',
+    'ampicillin': 'Amp',
+    'gentamicin': 'Gent',
+    'tobramycin': 'Tobra',
+    
+    // Pressors/Sedation
+    'norepinephrine': 'Levo',
+    'epinephrine': 'Epi',
+    'vasopressin': 'Vaso',
+    'phenylephrine': 'Neo',
+    'dopamine': 'Dopa',
+    'dobutamine': 'Dobu',
+    'propofol': 'Prop',
+    'midazolam': 'Versed',
+    'dexmedetomidine': 'Prec',
+    'lorazepam': 'Ativan',
+    'diazepam': 'Valium',
+    'ketamine': 'Ketamine',
+    
+    // Anticoagulation
+    'heparin': 'Hep',
+    'enoxaparin': 'Lovenox',
+    'warfarin': 'Coumadin',
+    'apixaban': 'Eliquis',
+    'rivaroxaban': 'Xarelto',
+    'dabigatran': 'Pradaxa',
+    'aspirin': 'ASA',
+    'clopidogrel': 'Plavix',
+    'ticagrelor': 'Brilinta',
+    'prasugrel': 'Effient',
+    
+    // Neuro/Psych medications
+    'levetiracetam': 'Keppra',
+    'phenytoin': 'Dilantin',
+    'valproic acid': 'Depakote',
+    'carbamazepine': 'Tegretol',
+    'lamotrigine': 'Lamictal',
+    'topiramate': 'Topamax',
+    'gabapentin': 'Neurontin',
+    'pregabalin': 'Lyrica',
+    'lacosamide': 'Vimpat',
+    'haloperidol': 'Haldol',
+    'quetiapine': 'Seroquel',
+    'olanzapine': 'Zyprexa',
+    'risperidone': 'Risperdal',
+    'aripiprazole': 'Abilify',
+    'ziprasidone': 'Geodon',
+    'clozapine': 'Clozaril',
+    'lithium': 'Lithium',
+    'valproate': 'Depakote',
+    'sertraline': 'Zoloft',
+    'escitalopram': 'Lexapro',
+    'fluoxetine': 'Prozac',
+    'paroxetine': 'Paxil',
+    'citalopram': 'Celexa',
+    'venlafaxine': 'Effexor',
+    'duloxetine': 'Cymbalta',
+    'bupropion': 'Wellbutrin',
+    'mirtazapine': 'Remeron',
+    'trazodone': 'Trazodone',
+    'clonazepam': 'Klonopin',
+    'alprazolam': 'Xanax',
+    
+    // GI medications
+    'ondansetron': 'Z',
+    'pantoprazole': 'Protonix',
+    'famotidine': 'Pepcid',
+    'omeprazole': 'Prilosec',
+    'esomeprazole': 'Nexium',
+    'lansoprazole': 'Prevacid',
+    'ranitidine': 'Zantac',
+    'docusate': 'Colace',
+    'senna': 'Senna',
+    'bisacodyl': 'Dulcolax',
+    'polyethylene glycol': 'Miralax',
+    'metoclopramide': 'Reglan',
+    'promethazine': 'Phenergan',
+    'prochlorperazine': 'Compazine',
+    
+    // Cardio/Pulm (including statins)
+    'metoprolol': 'Metop',
+    'carvedilol': 'Coreg',
+    'atenolol': 'Atenolol',
+    'labetalol': 'Labetalol',
+    'esmolol': 'Esmolol',
+    'lisinopril': 'Lisinopril',
+    'enalapril': 'Enalapril',
+    'captopril': 'Captopril',
+    'losartan': 'Losartan',
+    'valsartan': 'Valsartan',
+    'amlodipine': 'Norvasc',
+    'diltiazem': 'Cardizem',
+    'nicardipine': 'Cardene',
+    'hydralazine': 'Hydral',
+    'furosemide': 'Lasix',
+    'bumetanide': 'Bumex',
+    'torsemide': 'Torsemide',
+    'spironolactone': 'Spiro',
+    'albuterol': 'Alb',
+    'ipratropium': 'Atro',
+    'albuterol-ipratropium': 'DuoNeb',
+    'nitroglycerin': 'NTG',
+    'isosorbide': 'Imdur',
+    'digoxin': 'Dig',
+    'amiodarone': 'Amio',
+    'sotalol': 'Sotalol',
+    'flecainide': 'Flec',
+    // STATINS
+    'rosuvastatin': 'Crestor',
+    'atorvastatin': 'Lipitor',
+    'simvastatin': 'Zocor',
+    'pravastatin': 'Pravachol',
+    'lovastatin': 'Mevacor',
+    'fluvastatin': 'Lescol',
+    'pitavastatin': 'Livalo',
+    
+    // Endocrine
+    'insulin lispro': 'Lispro',
+    'insulin aspart': 'Aspart',
+    'insulin regular': 'Reg insulin',
+    'insulin isophane': 'NPH',
+    'insulin glargine': 'Lantus',
+    'insulin detemir': 'Levemir',
+    'insulin degludec': 'Tresiba',
+    'levothyroxine': 'Synthroid',
+    'liothyronine': 'Cytomel',
+    'hydrocortisone': 'Solu-Cortef',
+    'dexamethasone': 'Decadron',
+    
+    // Others
+    'tacrolimus': 'Tacro',
+    'cyclosporine': 'Cyclo',
+    'mycophenolate': 'CellCept',
+    'prednisone': 'Pred',
+    'methylprednisolone': 'Solumedrol',
+    'valganciclovir': 'Valcyte',
+    'ganciclovir': 'Ganciclovir',
+    'acyclovir': 'Acyclovir',
+    'valacyclovir': 'Valtrex',
+    'entecavir': 'Baraclude',
+    'nystatin': 'Nystatin',
+    'thiamine': 'Thiamine',
+    'folic acid': 'Folate',
+    'cholecalciferol': 'Vit D',
+    'cyanocobalamin': 'B12',
+    'zinc sulfate': 'Zinc',
+    'magnesium sulfate': 'Mag',
+    'potassium chloride': 'K',
+    'calcium gluconate': 'Ca',
+    'calcium carbonate': 'CaCO3',
+    'erythromycin': 'Erythro',
+    'lidocaine': 'Lido',
+    'ursodiol': 'Urso',
+    'romiplostim': 'Nplate',
+    'filgrastim': 'Neupogen',
+    'epoetin': 'Epogen',
+    'albumin': 'Albumin',
+    'immunoglobulin': 'IVIG'
+};
 
+// 2. MEDICATION CATEGORIES FOR ORGANIZATION
+const MED_CATEGORIES = {
+    PAIN: ['hydromorphone', 'oxycodone', 'morphine', 'fentanyl', 'acetaminophen', 
+           'ibuprofen', 'ketorolac', 'tramadol', 'hydrocodone', 'meperidine', 'codeine'],
+    
+    ANTIBIOTICS: ['cefepime', 'vancomycin', 'piperacillin', 'tazobactam', 'meropenem', 'imipenem',
+                 'ceftriaxone', 'ceftazidime', 'cefazolin', 'azithromycin', 'levofloxacin', 
+                 'ciprofloxacin', 'metronidazole', 'daptomycin', 'micafungin',
+                 'caspofungin', 'fluconazole', 'sulfamethoxazole', 'trimethoprim', 'linezolid',
+                 'clindamycin', 'ampicillin', 'gentamicin', 'tobramycin'],
+    
+    PRESSORS_SEDATION: ['norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine', 'dopamine',
+                       'dobutamine', 'propofol', 'midazolam', 'dexmedetomidine', 'lorazepam', 
+                       'diazepam', 'ketamine'],
+    
+    ANTICOAG: ['heparin', 'enoxaparin', 'warfarin', 'apixaban', 'rivaroxaban', 'dabigatran',
+              'aspirin', 'clopidogrel', 'ticagrelor', 'prasugrel'],
+    
+    NEURO: ['levetiracetam', 'phenytoin', 'valproic acid', 'carbamazepine', 'lamotrigine', 
+            'topiramate', 'gabapentin', 'pregabalin', 'lacosamide', 'haloperidol', 'quetiapine',
+            'olanzapine', 'risperidone', 'aripiprazole', 'ziprasidone', 'clozapine', 'lithium',
+            'valproate', 'sertraline', 'escitalopram', 'fluoxetine', 'paroxetine', 'citalopram',
+            'venlafaxine', 'duloxetine', 'bupropion', 'mirtazapine', 'trazodone', 'clonazepam',
+            'alprazolam'],
+    
+    GI: ['ondansetron', 'pantoprazole', 'famotidine', 'omeprazole', 'esomeprazole', 'lansoprazole',
+        'ranitidine', 'docusate', 'senna', 'bisacodyl', 'polyethylene', 'metoclopramide',
+        'promethazine', 'prochlorperazine'],
+    
+    CARDIO_PULM: ['metoprolol', 'carvedilol', 'atenolol', 'labetalol', 'esmolol', 'lisinopril', 
+                 'enalapril', 'captopril', 'losartan', 'valsartan', 'amlodipine', 'diltiazem', 
+                 'nicardipine', 'hydralazine', 'furosemide', 'bumetanide', 'torsemide', 
+                 'spironolactone', 'albuterol', 'ipratropium', 'nitroglycerin', 'isosorbide',
+                 'digoxin', 'amiodarone', 'sotalol', 'flecainide', 'rosuvastatin', 'atorvastatin',
+                 'simvastatin', 'pravastatin', 'lovastatin', 'fluvastatin', 'pitavastatin'],
+    
+    ENDOCRINE: ['insulin', 'lispro', 'aspart', 'regular', 'isophane', 'nph', 'glargine', 'detemir',
+               'degludec', 'levothyroxine', 'liothyronine', 'hydrocortisone', 'dexamethasone']
+};
 
-	
-
-    // Process diet order
-    if (dietMatch) {
-        const diet = dietMatch[1].trim().toLowerCase();
-        const dietMap = {
-            'npo': 'NPO',
-            'nothing by mouth': 'NPO',
-            'regular': 'RD',
-            'general': 'RD',
-            'clear liquid': 'CLD',
-            'full liquid': 'FLD',
-            'renal': 'renal',
-            'cardiac': 'cardiac',
-            'diabetic': 'DM diet',
-            'diabetes': 'DM diet',
-            'soft': 'soft',
-            'mechanical soft': 'mech soft',
-            'pureed': 'puree',
-            'dysphagia': 'dysphagia',
-			'IDDSI': 'IDDSI',
-			'Pediatric': 'pediatric', 
-        };
-        
-        for (const [key, value] of Object.entries(dietMap)) {
-            if (diet.includes(key)) {
-                orders['N/F'].push(value);
-                break;
-            }
+// 3. CORE ABBREVIATION FUNCTION (the key one!)
+function abbreviateMedication(drugName) {
+    const nameLower = drugName.toLowerCase();
+    
+    // Look up in database
+    for (let [key, abbrev] of Object.entries(MED_ABBREVIATIONS)) {
+        if (nameLower.includes(key)) {
+            return abbrev;
         }
     }
     
-    // Process medications
-    const medLines = medsText.split('\n').filter(line => line.trim());
-    const processedMeds = new Set();
-    
-    medLines.forEach(line => {
-        const lineLower = line.toLowerCase();
-
-        // Skip header lines but continue processing
-        if (lineLower.includes('scheduled:') ||
-            lineLower.includes('prn:') ||
-            lineLower.includes('continuous:') ||
-            line.trim().length < 3) {
-            return;
-        }
-
-        // Find matching drug
-        let matched = false;
-        for (const [drug, info] of Object.entries(drugAbbreviations)) {
-            if (lineLower.includes(drug)) {
-                const { dose, freq } = extractDoseInfo(line);
-
-                // Detect route
-                let route = '';
-                if (lineLower.includes('po ') || lineLower.includes('oral') || lineLower.includes('by mouth')) {
-                    route = 'PO';
-                } else if (lineLower.includes('iv ') || lineLower.includes('intravenous')) {
-                    route = 'IV';
-                } else if (lineLower.includes('im ') || lineLower.includes('intramuscular')) {
-                    route = 'IM';
-                } else if (lineLower.includes('sq ') || lineLower.includes('subcutaneous') || lineLower.includes('subcut')) {
-                    route = 'SQ';
-                }
-
-                // Detect PRN
-                let isPRN = lineLower.includes('prn') || lineLower.includes('as needed');
-
-                // Detect continuous infusion
-                let isContinuous = lineLower.includes('continuous') ||
-                                   lineLower.includes('infusion') ||
-                                   lineLower.includes('ml/hr');
-
-                // Build abbreviation
-                let abbr = info.abbr;
-
-                // Special formatting for acetaminophen
-                if (drug === 'acetaminophen' || drug === 'tylenol') {
-                    if (dose === '975') {
-                        abbr = 'T975';
-                    } else if (dose === '1000') {
-                        abbr = 'T1000';
-                    } else if (dose) {
-                        abbr = `T${dose}`;
-                    }
-                } else if (isContinuous) {
-                    // For continuous infusions, use "gtt" instead of dose/freq
-                    abbr = `${info.abbr} gtt`;
-                } else {
-                    // Standard formatting for other meds
-                    if (dose && freq) {
-                        abbr = `${info.abbr} ${dose} ${freq}`;
-                    } else if (dose) {
-                        abbr = `${info.abbr} ${dose}`;
-                    } else if (freq) {
-                        abbr = `${info.abbr} ${freq}`;
-                    }
-                }
-
-                // Add route if present
-                if (route) {
-                    abbr += ` ${route}`;
-                }
-
-                // Add PRN if present
-                if (isPRN) {
-                    abbr += ' PRN';
-                }
-
-                // Add asterisks around IV pain medications
-                if (info.category === 'Pain' && route === 'IV') {
-                    abbr = `*${abbr}*`;
-                }
-
-                if (!processedMeds.has(abbr)) {
-                    orders[info.category].push(abbr);
-                    processedMeds.add(abbr);
-                }
-
-                matched = true;
-                break;
-            }
-        }
-        
-        // Special handling for fluids with rates
-        if (!matched && (lineLower.includes('ml/hr') || lineLower.includes('ml per hour'))) {
-            const rateMatch = line.match(/(\d+)\s*mL\/hr/i);
-            if (rateMatch) {
-                const rate = rateMatch[1];
-                if (lineLower.includes('lactated ringer')) {
-                    orders['N/F'].push(`LR@${rate}`);
-                } else if (lineLower.includes('normal saline') || lineLower.includes('0.9%')) {
-                    orders['N/F'].push(`NS@${rate}`);
-                } else if (lineLower.includes('d5w')) {
-                    orders['N/F'].push(`D5W@${rate}`);
-                }
-            }
-        }
-    });
-    
-    // Format final orders
-    const formattedOrders = [];
-    formattedOrders.push(`N/F: ${orders['N/F'].length > 0 ? orders['N/F'].join(', ') : ''}`);
-    formattedOrders.push(`Pain: ${orders['Pain'].length > 0 ? orders['Pain'].join(', ') : ''}`);
-    formattedOrders.push(existingLTD ? `LTD: ${existingLTD}` : `LTD:`);
-    formattedOrders.push(`Abx: ${orders['Abx'].length > 0 ? orders['Abx'].join(', ') : ''}`);
-    formattedOrders.push(`AC: ${orders['AC'].length > 0 ? orders['AC'].join(', ') : '*NO DVT PPX*'}`);
-    formattedOrders.push(`dispo: ${existingDispo}`);
-    
-    return formattedOrders.join('\n');
+    // Return original if not found
+    return drugName;
 }
 
+// 4. ROUTE ABBREVIATION
+function abbreviateRoute(route) {
+    const routeMap = {
+        'Oral': 'PO',
+        'Intravenous': 'IV',
+        'Intramuscular': 'IM',
+        'Subcutaneous': 'SQ',
+        'Sublingual': 'SL',
+        'Topical': 'TOP',
+        'Rectal': 'PR',
+        'Transdermal': 'TD',
+        'Nebulizer': 'NEB',
+        'NEB': 'NEB',
+        'Nasal': 'IN',
+        'Eye-Both': 'OU',
+        'Eye-Left': 'OS',
+        'Eye-Right': 'OD',
+        'Swish and Swallow': 'S&S'
+    };
+    
+    return routeMap[route] || route;
+}
+
+// 5. FREQUENCY ABBREVIATION
+function abbreviateFrequency(freq) {
+    // Handle "every X hours"
+    const hourMatch = freq.match(/every\s+(\d+)\s+hours?/i);
+    if (hourMatch) {
+        return `Q${hourMatch[1]}`;
+    }
+    
+    const freqMap = {
+        'Daily': 'QD',
+        'Once': 'x1',
+        '2 times a day': 'BID',
+        '2 times per day': 'BID',
+        '3 times a day': 'TID',
+        '3 times per day': 'TID',
+        '4 times a day': 'QID',
+        '4 times per day': 'QID',
+        '6 times per day': 'Q4',
+        'every 7 days': 'Q7D',
+        'every week': 'Q7D',
+        'every 48 hours': 'Q48',
+        'every evening': 'QPM',
+        'every morning': 'QAM',
+        'As Directed': 'PRN',
+        'Monday and Thursday': 'Mon/Thu',
+        'On Call': 'on call'
+    };
+    
+    for (let [key, value] of Object.entries(freqMap)) {
+        if (freq.includes(key)) {
+            return value;
+        }
+    }
+    
+    return freq;
+}
+
+// 6. PARSE MEDICATION LINE (main parser)
+function parseMedicationLine(line, isPRN = false) {
+    const lineLower = line.toLowerCase();
+    
+    // Handle insulin sliding scale first
+    if (lineLower.includes('insulin') && lineLower.includes('sliding scale')) {
+        return parseInsulinSlidingScale(line, isPRN);
+    }
+    
+    // Handle continuous infusions
+    if (lineLower.includes('continuous') || lineLower.includes('infusion') || 
+        lineLower.includes('gtt') || lineLower.includes('drip')) {
+        return parseInfusion(line, isPRN);
+    }
+    
+    // Handle IV fluids with rates
+    if (lineLower.match(/\d+\s*ml\/hr/i)) {
+        const fluidResult = parseFluidInfusion(line, isPRN);
+        if (fluidResult) return fluidResult;
+    }
+    
+    // Standard medication with double-space separator
+    const doubleSeparator = line.indexOf('  ');
+    if (doubleSeparator === -1) {
+        return null; // Skip if no proper format
+    }
+    
+    const beforeSeparator = line.substring(0, doubleSeparator).trim();
+    const afterSeparator = line.substring(doubleSeparator + 2).trim();
+    
+    // Extract drug name (everything before dose)
+    const drugName = extractDrugName(beforeSeparator);
+    
+    // Parse dose, route, frequency
+    const parts = afterSeparator.split(',').map(p => p.trim());
+    let dose = parts[0] || '';
+    let route = parts[1] || '';
+    let frequency = parts[2] || '';
+    
+    // Clean and abbreviate
+    dose = cleanDose(dose, beforeSeparator);
+    route = abbreviateRoute(route);
+    frequency = abbreviateFrequency(frequency);
+    
+    const abbreviated = abbreviateMedication(drugName);
+    
+    return {
+        name: abbreviated,
+        dose: dose,
+        route: route,
+        frequency: frequency,
+        isPRN: isPRN,
+        original: line,
+        fullName: drugName
+    };
+}
+
+// 7. PARSE FLUID INFUSION
+function parseFluidInfusion(line, isPRN) {
+    const fluidPatterns = [
+        { 
+            regex: /^sodium chloride\s+0\.9%.*?(\d+)\s*mL\/hr/i, 
+            name: 'NS',
+            check: line => line.toLowerCase().trim().startsWith('sodium chloride 0.9%')
+        },
+        { 
+            regex: /^sodium chloride\s+0\.45%.*?(\d+)\s*mL\/hr/i, 
+            name: '1/2NS',
+            check: line => line.toLowerCase().trim().startsWith('sodium chloride 0.45%')
+        },
+        { 
+            regex: /^lactated\s+ringer.*?(\d+)\s*mL\/hr/i, 
+            name: 'LR',
+            check: line => line.toLowerCase().trim().startsWith('lactated')
+        },
+        { 
+            regex: /^plasmalyte.*?(\d+)\s*mL\/hr/i, 
+            name: 'PL',
+            check: line => line.toLowerCase().trim().startsWith('plasmalyte')
+        },
+        { 
+            regex: /^parenteral nutrition.*?(\d+)\s*mL\/hr/i, 
+            name: 'TPN',
+            check: line => line.toLowerCase().trim().startsWith('parenteral nutrition')
+        },
+        { 
+            regex: /^dextrose\s+5%.*?(\d+)\s*mL\/hr/i, 
+            name: 'D5W',
+            check: line => line.toLowerCase().trim().startsWith('dextrose 5%')
+        }
+    ];
+    
+    for (let pattern of fluidPatterns) {
+        if (pattern.check(line)) {
+            const match = line.match(pattern.regex);
+            if (match) {
+                const rate = match[1];
+                return {
+                    name: `${pattern.name}@${rate}`,
+                    dose: '',
+                    route: 'IV',
+                    frequency: '',
+                    isPRN: false,
+                    isFluid: true,
+                    category: 'ivf'
+                };
+            }
+        }
+    }
+    return null;
+}
+
+// 8. PARSE CONTINUOUS INFUSION
+function parseInfusion(line, isPRN) {
+    const infusionDrugs = [
+        'norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine', 
+        'dopamine', 'dobutamine', 'heparin', 'insulin regular', 'propofol', 
+        'fentanyl', 'midazolam', 'dexmedetomidine', 'nitroglycerin', 
+        'nicardipine', 'amiodarone', 'diltiazem', 'esmolol', 'ketamine'
+    ];
+    
+    let drugName = '';
+    const lineLower = line.toLowerCase();
+    
+    for (let drug of infusionDrugs) {
+        if (lineLower.includes(drug.toLowerCase())) {
+            drugName = drug;
+            break;
+        }
+    }
+    
+    if (!drugName) {
+        drugName = line.split(' ')[0];
+    }
+    
+    const abbreviated = abbreviateMedication(drugName);
+    
+    return {
+        name: `${abbreviated} gtt`,
+        dose: '',
+        route: 'IV',
+        frequency: '',
+        isPRN: false,
+        isInfusion: true,
+        original: line
+    };
+}
+
+// 9. PARSE INSULIN SLIDING SCALE
+function parseInsulinSlidingScale(line, isPRN) {
+    if (!line.toLowerCase().includes('insulin lispro') && 
+        !line.toLowerCase().includes('humalog') &&
+        !line.toLowerCase().includes('insulin aspart') &&
+        !line.toLowerCase().includes('novolog')) {
+        return null;
+    }
+    
+    // Check for sliding scale pattern (0-X units)
+    const match = line.match(/0-(\d+)\s*units?/i);
+    if (match) {
+        const maxUnits = parseInt(match[1]);
+        const freqMatch = line.match(/every\s+(\d+)\s+hours/i);
+        const freq = freqMatch ? `Q${freqMatch[1]}` : 'Q4';
+        
+        let scaleName = '';
+        if (maxUnits >= 20) {
+            scaleName = 'ISS-R';  // Restrictive/High
+        } else if (maxUnits <= 10) {
+            scaleName = 'ISS-N';  // Normal/Standard
+        } else {
+            scaleName = 'ISS';    // Medium
+        }
+        
+        return {
+            name: `${scaleName} ${freq}`,
+            dose: '',
+            route: 'SC',
+            frequency: '',
+            isPRN: false,
+            category: 'endo'
+        };
+    }
+    
+    // Check for scheduled insulin (not sliding scale)
+    const scheduledMatch = line.match(/(\d+)\s*unit\(s\)/i);
+    if (scheduledMatch && !line.includes('0-')) {
+        const units = scheduledMatch[1];
+        const freqMatch = line.match(/every\s+(\d+)\s+hours/i);
+        const timesMatch = line.match(/(\d+)\s+times\s+a\s+day/i);
+        
+        let freq = '';
+        if (freqMatch) {
+            freq = `Q${freqMatch[1]}`;
+        } else if (timesMatch) {
+            const times = timesMatch[1];
+            if (times === '2') freq = 'BID';
+            else if (times === '3') freq = 'TID';
+            else if (times === '4') freq = 'QID';
+        }
+        
+        return {
+            name: `Lispro${units}u ${freq}`,
+            dose: '',
+            route: 'SC',
+            frequency: '',
+            isPRN: false,
+            category: 'endo'
+        };
+    }
+    
+    return null;
+}
+
+// 10. HELPER: EXTRACT DRUG NAME
+function extractDrugName(text) {
+    const formulationMarkers = /\d+\s*(mg|mcg|unit\(s\)|%|mL|g\b)/i;
+    const match = text.match(formulationMarkers);
+    
+    let drugName;
+    if (match) {
+        drugName = text.substring(0, match.index).trim();
+    } else {
+        drugName = text.trim();
+    }
+    
+    // Remove parentheses content
+    return drugName.replace(/\s*\([^)]*\)/g, '').trim();
+}
+
+// 11. HELPER: CLEAN DOSE
+function cleanDose(dose, beforeSeparator) {
+    // Handle combination drugs like "Pip-Tazo 3.375 g"
+    const combinationMatch = beforeSeparator.match(/(\d+\.?\d*)\s*(mg|mcg|g|unit|%)/i);
+    if (combinationMatch) {
+        const amount = combinationMatch[1];
+        const unit = combinationMatch[2];
+        
+        // Convert to simpler format
+        if (unit.toLowerCase() === 'g' && parseFloat(amount) < 1) {
+            return `${parseFloat(amount) * 1000}mg`;
+        }
+        return `${amount}${unit}`;
+    }
+    
+    // Clean standard dose
+    const doseMatch = dose.match(/(\d+\.?\d*)\s*(mg|mcg|g|unit|%|mL)/i);
+    if (doseMatch) {
+        return `${doseMatch[1]}${doseMatch[2]}`;
+    }
+    
+    return dose;
+}
+
+// =============================================================================
+// END OF WORKING ABBREVIATION SYSTEM
+// =============================================================================
+
+
+	
 
 
 
@@ -8885,179 +9951,7 @@ function extractDoseInfo(line) {
             return medsMatch ? medsMatch[1] : '';
         }
 
-        // COMPREHENSIVE MEDICATION ABBREVIATION FUNCTION
-        function abbreviateMedLine(line) {
-            const lineLower = line.toLowerCase().trim();
-
-            // Skip header lines
-            if (lineLower.includes('scheduled:') || lineLower.includes('prn:') || lineLower.includes('continuous:')) {
-                return null;
-            }
-
-            if (!lineLower || lineLower.length < 3) return null;
-
-            // Use the drugAbbreviations from extractOrders
-            const MED_ABBREVIATIONS = {
-                // Pain medications
-                'hydromorphone': 'D', 'dilaudid': 'D',
-                'oxycodone': 'O', 'percocet': 'O',
-                'morphine': 'M',
-                'fentanyl': 'F', 'fentanyl citrate': 'F',
-                'acetaminophen': 'T', 'tylenol': 'T',
-                'ibuprofen': 'Ibu',
-                'ketorolac': 'Toradol', 'toradol': 'Toradol',
-                'tramadol': 'Tramadol',
-                'hydrocodone': 'Norco',
-                'meperidine': 'Demerol',
-                'codeine': 'Codeine',
-
-                // Antibiotics
-                'cefepime': 'Cefepime',
-                'vancomycin': 'Vanc',
-                'piperacillin-tazobactam': 'Pip-Tazo',
-                'piperacillin': 'Pip',
-                'tazobactam': 'Tazo',
-                'meropenem': 'Mero',
-                'imipenem': 'Imi',
-                'ceftriaxone': 'CTX',
-                'ceftazidime': 'Ceftaz',
-                'cefazolin': 'Ancef',
-                'azithromycin': 'Azithro',
-                'levofloxacin': 'Levo',
-                'ciprofloxacin': 'Cipro',
-                'metronidazole': 'Flagyl',
-                'daptomycin': 'Dapto',
-                'eravacycline': 'Xerava',
-                'micafungin': 'Mica',
-                'caspofungin': 'Caspo',
-                'fluconazole': 'Fluc',
-                'sulfamethoxazole-trimethoprim': 'TMP-SMX',
-                'sulfamethoxazole': 'SMX',
-                'trimethoprim': 'TMP',
-                'linezolid': 'Zyvox',
-                'clindamycin': 'Clinda',
-                'ampicillin': 'Amp',
-                'gentamicin': 'Gent',
-                'tobramycin': 'Tobra',
-
-                // Pressors/Sedation
-                'norepinephrine': 'Levo', 'norepinephrine': 'Levo',
-                'epinephrine': 'Epi',
-                'vasopressin': 'Vaso',
-                'phenylephrine': 'Neo',
-                'dopamine': 'Dopa',
-                'dobutamine': 'Dobu',
-                'propofol': 'Prop',
-                'midazolam': 'Versed',
-                'dexmedetomidine': 'Prec',
-                'lorazepam': 'Ativan',
-                'diazepam': 'Valium',
-                'ketamine': 'Ketamine',
-
-                // Anticoagulation
-                'heparin': 'Hep',
-                'enoxaparin': 'Lovenox', 'lovenox': 'Lovenox',
-                'warfarin': 'Coumadin',
-                'apixaban': 'Eliquis',
-                'rivaroxaban': 'Xarelto',
-                'dabigatran': 'Pradaxa',
-                'aspirin': 'ASA',
-                'clopidogrel': 'Plavix',
-                'ticagrelor': 'Brilinta',
-                'prasugrel': 'Effient',
-
-                // GI
-                'ondansetron': 'Z',
-                'pantoprazole': 'Protonix',
-                'famotidine': 'Pepcid',
-                'omeprazole': 'Prilosec',
-                'esomeprazole': 'Nexium',
-                'lansoprazole': 'Prevacid',
-                'docusate': 'Colace',
-                'senna': 'Senna',
-                'bisacodyl': 'Dulcolax',
-                'polyethylene glycol': 'Miralax',
-                'metoclopramide': 'Reglan',
-
-                // Cardio/Pulm
-                'metoprolol': 'Metop',
-                'carvedilol': 'Coreg',
-                'labetalol': 'Labetalol',
-                'lisinopril': 'Lisinopril',
-                'losartan': 'Losartan',
-                'amlodipine': 'Norvasc',
-                'diltiazem': 'Cardizem',
-                'nicardipine': 'Cardene',
-                'hydralazine': 'Hydral',
-                'furosemide': 'Lasix',
-                'bumetanide': 'Bumex',
-                'spironolactone': 'Spiro',
-                'albuterol': 'Alb',
-                'ipratropium': 'Atro',
-                'albuterol-ipratropium': 'DuoNeb',
-                'nitroglycerin': 'NTG',
-                'amiodarone': 'Amio',
-
-                // Statins
-                'rosuvastatin': 'Crestor',
-                'atorvastatin': 'Lipitor',
-                'simvastatin': 'Zocor',
-
-                // Neuro
-                'levetiracetam': 'Keppra',
-                'gabapentin': 'Neurontin',
-                'pregabalin': 'Lyrica',
-                'haloperidol': 'Haldol',
-                'quetiapine': 'Seroquel',
-
-                // Fluids
-                'lactated ringers': 'LR',
-                'normal saline': 'NS',
-                'sodium chloride': 'NS',
-                'albumin': 'Albumin'
-            };
-
-            // Find matching medication
-            let abbr = null;
-            let longestMatch = '';
-            for (const [medName, medAbbr] of Object.entries(MED_ABBREVIATIONS)) {
-                if (lineLower.includes(medName) && medName.length > longestMatch.length) {
-                    abbr = medAbbr;
-                    longestMatch = medName;
-                }
-            }
-
-            if (!abbr) return line; // Return original if no match
-
-            // Extract dose, frequency, route
-            const doseMatch = line.match(/(\d+(?:,\d{3})*(?:\.\d+)?)\s*(mg|mcg|g|unit|mL|mEq)/i);
-            const freqMatch = line.match(/(?:every\s+(\d+)\s+hours?|q(\d+)h|daily|bid|tid|qid|once|prn)/i);
-            const routeMatch = line.match(/\b(IV|PO|SC|IM|PR|NEB|INH)\b/i);
-
-            let result = abbr;
-
-            if (doseMatch) {
-                const dose = doseMatch[1].replace(/,/g, '');
-                const unit = doseMatch[2];
-                result += ` ${dose}${unit}`;
-            }
-
-            if (freqMatch) {
-                if (freqMatch[1]) result += ` Q${freqMatch[1]}`;
-                else if (freqMatch[2]) result += ` Q${freqMatch[2]}`;
-                else result += ` ${freqMatch[0]}`;
-            }
-
-            if (routeMatch) {
-                result += ` ${routeMatch[1]}`;
-            }
-
-            if (lineLower.includes('prn') || lineLower.includes('as needed')) {
-                result += ' PRN';
-            }
-
-            return result;
-        }
+     
 
 
 
@@ -9110,7 +10004,7 @@ function showStaffPresentation() {
     if (useProblemsMode) {
         // Prefer 'Problems', but fall back to a few common variants just in case
         const problems =
-            !isBlank(patient.Problems) ? String(patient.Problems).trim() :
+            !isBlank(patient.PROBLEMS) ? String(patient.PROBLEMS).trim() :
             !isBlank(patient.PROBLEMS) ? String(patient.PROBLEMS).trim() :
             !isBlank(patient['Problem List']) ? String(patient['Problem List']).trim() :
             'No problems listed';
