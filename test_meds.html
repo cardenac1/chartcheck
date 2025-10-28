@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Medication Processing Test</title>
+</head>
+<body>
+    <h1>Medication Processing Test</h1>
+    <button onclick="runTest()">Run Test</button>
+    <pre id="output"></pre>
+
+    <script>
+        const testData = `Medications (22) Active Scheduled: (8) amiodarone  150 mg 100 mL, IV Piggyback, Daily aspirin 81 mg Chew Tab  81 mg 1 tab, Oral, Daily fat emulsion, IV (Smoflipid)  50 g 250 mL, IV Piggyback, Once fludrocortisone 0.1 mg Tab  0.1 mg 1 tab, Oral, Daily hydrocortisone 100 mg PF Inj  50 mg, IV Push, every 6 hours scheduled pantoprazole 40 mg IV Inj  40 mg, IV Push, Daily piperacillin-tazobactam 2.25 g Injection Vial  IVPUSH g, IV Push, every 6 hours scheduled thiamine  500 mg 5 mL, IV Piggyback, every 8 hours scheduled Continuous: (9) angiotensin II 2.5 mg [10 ng/kg/min] + Sodium Chloride 0.9% 250 mL  250 mL, IV Continuous, 6.21 mL/hr dexmedeTOMIDine 400 mcg [0.8 mcg/kg/hr] + Premix Sodium Chloride 0.9% 100 mL  100 mL, IV Continuous, 20.7 mL/hr EPINEPHrine 8 mg [5 mcg/min] + Premix Sodium Chloride 0.9% 250 mL  250 mL, IV Continuous, 9.38 mL/hr heparin 25000 unit(s) [10 unit/kg/hr] + Premix Sodium Chloride 0.45% 250 mL  250 mL, IV Continuous, 10 mL/hr insulin regular 100 unit(s) + Premix Sodium Chloride 0.9% 100 mL  100 mL, IV Continuous norEPINEPHrine 8 mg [5 mcg/min] + Premix Dextrose 5% in Water 250 mL  250 mL, IV Continuous, 9.38 mL/hr Parenteral Nutrition 1,500 mL  1,500 mL, IV Continuous, 63 mL/hr Parenteral Nutrition 1,500 mL  1,500 mL, IV Continuous, 63 mL/hr vasopressin 20 unit(s) [1.2 units/hr] + Premix Dextrose 5% in Water 100 mL  100 mL, IV Continuous, 6 mL/hr PRN: (5) albuterol-ipratropium 2.5 mg-0.5 mg/3 mL Inh Soln 3 mL  3 mL, NEB, 4 times a day Dextrose 50% in Water Abboject inj 50 mL  25 g 50 mL, IV Push, As Directed HYDROmorphone 1 mg/mL Inj Soln 1 mL  0.5 mg 0.5 mL, IV Push, every 4 hours ondansetron 2 mg/mL Inj Soln 2 mL  4 mg 2 mL, IV Push, every 6 hours sodium chloride 0.9% NEB Soln 3 mL  3 mL, NEB, every 4 hours`;
+
+        const MED_ABBREVIATIONS = {
+            'hydromorphone': 'D',
+            'aspirin': 'ASA',
+            'pantoprazole': 'Protonix',
+            'piperacillin-tazobactam': 'Pip-Tazo',
+            'thiamine': 'Thiamine',
+            'dexmedetomidine': 'Prec',
+            'epinephrine': 'Epi',
+            'norepinephrine': 'Levo',
+            'heparin': 'Hep',
+            'insulin regular': 'Reg insulin',
+            'vasopressin': 'Vaso',
+            'albuterol-ipratropium': 'DuoNeb',
+            'ondansetron': 'Z',
+            'amiodarone': 'Amio',
+            'fludrocortisone': 'fludrocortisone',
+            'hydrocortisone': 'Solu-Cortef'
+        };
+
+        function abbreviateMedication(drugName) {
+            const nameLower = drugName.toLowerCase();
+            for (let [key, abbrev] of Object.entries(MED_ABBREVIATIONS)) {
+                if (nameLower.includes(key)) {
+                    return abbrev;
+                }
+            }
+            return drugName;
+        }
+
+        function abbreviateRoute(route) {
+            const routeMap = {
+                'Oral': 'PO',
+                'Intravenous': 'IV',
+                'Intramuscular': 'IM',
+                'Subcutaneous': 'SQ',
+                'Sublingual': 'SL',
+                'Topical': 'TOP',
+                'Rectal': 'PR',
+                'Transdermal': 'TD',
+                'Nebulizer': 'NEB',
+                'NEB': 'NEB',
+                'IV Push': 'IV',
+                'IV Piggyback': 'IV',
+                'IV Continuous': 'IV',
+                'Nasal': 'IN'
+            };
+            return routeMap[route] || route;
+        }
+
+        function abbreviateFrequency(freq) {
+            const hourMatch = freq.match(/every\s+(\d+)\s+hours?/i);
+            if (hourMatch) {
+                return `Q${hourMatch[1]}`;
+            }
+
+            const freqMap = {
+                'Daily': 'QD',
+                'Once': 'x1',
+                '2 times a day': 'BID',
+                '3 times a day': 'TID',
+                '4 times a day': 'QID',
+                'As Directed': 'PRN'
+            };
+
+            for (let [key, value] of Object.entries(freqMap)) {
+                if (freq.includes(key)) {
+                    return value;
+                }
+            }
+
+            return freq;
+        }
+
+        function extractDrugName(text) {
+            const formulationMarkers = /\d+\s*(mg|mcg|unit\(s\)|%|mL|g\b)/i;
+            const match = text.match(formulationMarkers);
+
+            let drugName;
+            if (match) {
+                drugName = text.substring(0, match.index).trim();
+            } else {
+                drugName = text.trim();
+            }
+
+            return drugName.replace(/\s*\([^)]*\)/g, '').trim();
+        }
+
+        function cleanDose(dose, beforeSeparator) {
+            const combinationMatch = beforeSeparator.match(/(\d+\.?\d*)\s*(mg|mcg|g|unit|%)/i);
+            if (combinationMatch) {
+                const amount = combinationMatch[1];
+                const unit = combinationMatch[2];
+
+                if (unit.toLowerCase() === 'g' && parseFloat(amount) < 1) {
+                    return `${parseFloat(amount) * 1000}mg`;
+                }
+                return `${amount}${unit}`;
+            }
+
+            const doseMatch = dose.match(/(\d+\.?\d*)\s*(mg|mcg|g|unit|%|mL)/i);
+            if (doseMatch) {
+                return `${doseMatch[1]}${doseMatch[2]}`;
+            }
+
+            return dose;
+        }
+
+        function parseMedicationLine(line, isPRN = false) {
+            const lineLower = line.toLowerCase();
+
+            // Handle continuous infusions
+            if (lineLower.includes('continuous') || lineLower.includes('infusion')) {
+                const infusionDrugs = [
+                    'norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
+                    'dopamine', 'dobutamine', 'heparin', 'insulin regular', 'propofol',
+                    'fentanyl', 'midazolam', 'dexmedetomidine', 'angiotensin'
+                ];
+
+                let drugName = '';
+                for (let drug of infusionDrugs) {
+                    if (lineLower.includes(drug.toLowerCase())) {
+                        drugName = drug;
+                        break;
+                    }
+                }
+
+                if (!drugName) {
+                    drugName = line.split(' ')[0];
+                }
+
+                const abbreviated = abbreviateMedication(drugName);
+
+                return {
+                    name: `${abbreviated} gtt`,
+                    dose: '',
+                    route: 'IV',
+                    frequency: '',
+                    isPRN: false,
+                    isInfusion: true,
+                    original: line
+                };
+            }
+
+            // Handle Parenteral Nutrition
+            if (lineLower.includes('parenteral nutrition')) {
+                const rateMatch = line.match(/(\d+)\s*mL\/hr/i);
+                const rate = rateMatch ? rateMatch[1] : '';
+                return {
+                    name: `TPN@${rate}`,
+                    dose: '',
+                    route: 'IV',
+                    frequency: '',
+                    isPRN: false,
+                    isFluid: true,
+                    original: line
+                };
+            }
+
+            // Standard medication with double-space separator
+            const doubleSeparator = line.indexOf('  ');
+            if (doubleSeparator === -1) {
+                return null;
+            }
+
+            const beforeSeparator = line.substring(0, doubleSeparator).trim();
+            const afterSeparator = line.substring(doubleSeparator + 2).trim();
+
+            const drugName = extractDrugName(beforeSeparator);
+
+            const parts = afterSeparator.split(',').map(p => p.trim());
+            let dose = parts[0] || '';
+            let route = parts[1] || '';
+            let frequency = parts[2] || '';
+
+            dose = cleanDose(dose, beforeSeparator);
+            route = abbreviateRoute(route);
+            frequency = abbreviateFrequency(frequency);
+
+            const abbreviated = abbreviateMedication(drugName);
+
+            return {
+                name: abbreviated,
+                dose: dose,
+                route: route,
+                frequency: frequency,
+                isPRN: isPRN,
+                original: line,
+                fullName: drugName
+            };
+        }
+
+        function formatMedicationForDisplay(med) {
+            let result = med.name;
+            if (med.dose) result += ` ${med.dose}`;
+            if (med.frequency) result += ` ${med.frequency}`;
+            if (med.route) result += ` ${med.route}`;
+            if (med.isPRN) result += ' PRN';
+            return result;
+        }
+
+        function runTest() {
+            const output = document.getElementById('output');
+            let result = '';
+
+            const medSection = testData.match(/Medications.*?$/is);
+            if (!medSection) {
+                result = 'No medication section found';
+                output.textContent = result;
+                return;
+            }
+
+            const medText = medSection[0];
+            const medLines = medText.split('\n');
+
+            let isPRN = false;
+            const processedMeds = [];
+
+            for (const line of medLines) {
+                const trimmedLine = line.trim();
+                if (!trimmedLine || trimmedLine.length < 3) continue;
+
+                const lineLower = trimmedLine.toLowerCase();
+                if (lineLower.includes('scheduled:')) {
+                    isPRN = false;
+                    result += '\n=== SCHEDULED MEDICATIONS ===\n';
+                    continue;
+                }
+                if (lineLower.includes('prn:')) {
+                    isPRN = true;
+                    result += '\n=== PRN MEDICATIONS ===\n';
+                    continue;
+                }
+                if (lineLower.includes('continuous:')) {
+                    isPRN = false;
+                    result += '\n=== CONTINUOUS INFUSIONS ===\n';
+                    continue;
+                }
+
+                if (lineLower.includes('medications (') || lineLower.includes('active')) {
+                    continue;
+                }
+
+                result += `\nOriginal: ${trimmedLine}\n`;
+
+                const parsed = parseMedicationLine(trimmedLine, isPRN);
+                if (parsed) {
+                    const display = formatMedicationForDisplay(parsed);
+                    result += `Parsed: ${display}\n`;
+                    processedMeds.push(display);
+                } else {
+                    result += `ERROR: Could not parse\n`;
+                }
+            }
+
+            result += '\n\n=== ALL PROCESSED MEDICATIONS ===\n';
+            processedMeds.forEach((med, idx) => {
+                result += `${idx + 1}. ${med}\n`;
+            });
+
+            output.textContent = result;
+        }
+    </script>
+</body>
+</html>
