@@ -5104,6 +5104,95 @@ function showImportModal() {
 
         // ============ SYSTEM FIELDS AUTO-POPULATION WITH ABNORMAL DETECTION ============
 
+        // Helper function to extract vitals for system fields
+        function extractVitalsForSystems(text, labDataObj) {
+            const vitals = {};
+
+            // Extract latest values from arrays
+            if (labDataObj && labDataObj.vitals) {
+                if (labDataObj.vitals.o2 && labDataObj.vitals.o2.length > 0) {
+                    vitals.o2 = labDataObj.vitals.o2[labDataObj.vitals.o2.length - 1];
+                }
+                if (labDataObj.vitals.rr && labDataObj.vitals.rr.length > 0) {
+                    vitals.rr = labDataObj.vitals.rr[labDataObj.vitals.rr.length - 1];
+                }
+                if (labDataObj.vitals.hr && labDataObj.vitals.hr.length > 0) {
+                    vitals.hr = labDataObj.vitals.hr[labDataObj.vitals.hr.length - 1];
+                }
+                if (labDataObj.vitals.bp && labDataObj.vitals.bp.length > 0) {
+                    vitals.bp = labDataObj.vitals.bp[labDataObj.vitals.bp.length - 1];
+                }
+                if (labDataObj.vitals.map && labDataObj.vitals.map.length > 0) {
+                    vitals.map = labDataObj.vitals.map[labDataObj.vitals.map.length - 1];
+                }
+            }
+
+            // Add O2 therapy info
+            if (labDataObj && labDataObj.o2therapyCode) {
+                vitals.o2therapy = labDataObj.o2therapyCode;
+            }
+
+            return vitals;
+        }
+
+        // Helper function to extract I/O for system fields
+        function extractIOForSystems(text, labDataObj) {
+            const io = {};
+
+            // Extract from labDataObj
+            if (labDataObj) {
+                if (labDataObj.intake) {
+                    io.totalIn = labDataObj.intake;
+                }
+                if (labDataObj.output) {
+                    io.totalOut = labDataObj.output;
+                    io.uop = labDataObj.output; // Assuming output is primarily UOP
+
+                    // Calculate balance
+                    if (labDataObj.intake) {
+                        io.balance = labDataObj.intake - labDataObj.output;
+                    }
+
+                    // Calculate cc/kg/hr if weight is available
+                    if (labDataObj.weight && labDataObj.weight > 0) {
+                        const ccPerKgPer24Hr = labDataObj.output / labDataObj.weight;
+                        io.ccKgHr = (ccPerKgPer24Hr / 24).toFixed(2);
+                    }
+                }
+            }
+
+            return io;
+        }
+
+        // Helper function to extract fluid infusions
+        function extractFluidInfusions(text) {
+            const fluids = [];
+
+            // Look for fluid infusion patterns in the medications text
+            const fluidPatterns = [
+                { regex: /Lactated\s+Ringer.*?(\d+)\s*mL\/hr/gi, name: 'LR' },
+                { regex: /Normal\s+Saline.*?(\d+)\s*mL\/hr/gi, name: 'NS' },
+                { regex: /Sodium\s+Chloride\s+0\.9%.*?(\d+)\s*mL\/hr/gi, name: 'NS' },
+                { regex: /Sodium\s+Chloride\s+0\.45%.*?(\d+)\s*mL\/hr/gi, name: '1/2NS' },
+                { regex: /Dextrose\s+5%.*?(\d+)\s*mL\/hr/gi, name: 'D5W' },
+                { regex: /Parenteral\s+Nutrition.*?(\d+)\s*mL\/hr/gi, name: 'TPN' },
+                { regex: /Plasmalyte.*?(\d+)\s*mL\/hr/gi, name: 'PL' }
+            ];
+
+            for (const pattern of fluidPatterns) {
+                let match;
+                const matches = new Set(); // Prevent duplicates
+                while ((match = pattern.regex.exec(text)) !== null) {
+                    const rate = match[1];
+                    const fluidStr = `${pattern.name}@${rate}`;
+                    matches.add(fluidStr);
+                }
+                fluids.push(...Array.from(matches));
+            }
+
+            return fluids;
+        }
+
         function extractAndFormatSystemsData(text, labDataObj) {
             const systems = {};
 
