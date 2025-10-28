@@ -5485,60 +5485,189 @@ function extractMedsBySystem(text) {
         renal: [
             'furosemide', 'bumetanide', 'torsemide', 'spironolactone',
             'magnesium', 'potassium', 'calcium'
+        ],
+        diet: [
+            'fat emulsion', 'smoflipid', 'parenteral nutrition', 'tpn', 'ppn'
         ]
     };
-    
+
     // Helper function to parse and abbreviate a single medication line
     function parseMedicationLine(line) {
         const trimmedLine = line.trim();
         if (!trimmedLine) return null;
-        
-        // Check for fluid infusion
+
+        const lineLower = trimmedLine.toLowerCase();
+        let isPRN = lineLower.includes('prn') || lineLower.includes('as needed');
+
+        // 1. HANDLE PARENTERAL NUTRITION
+        if (lineLower.includes('parenteral nutrition')) {
+            const rateMatch = trimmedLine.match(/(\d+)\s*mL\/hr/i);
+            const rate = rateMatch ? rateMatch[1] : '';
+            return {
+                abbreviated: `TPN@${rate}`,
+                original: trimmedLine,
+                drugName: 'parenteral nutrition',
+                isPRN: false
+            };
+        }
+
+        // 2. HANDLE CONTINUOUS INFUSIONS (with "IV Continuous" or "Continuous")
+        if (lineLower.includes('continuous') || lineLower.includes('infusion')) {
+            const infusionDrugs = [
+                'norepinephrine', 'epinephrine', 'vasopressin', 'phenylephrine',
+                'dopamine', 'dobutamine', 'heparin', 'insulin regular', 'propofol',
+                'fentanyl', 'midazolam', 'dexmedetomidine', 'nitroglycerin',
+                'nicardipine', 'amiodarone', 'diltiazem', 'esmolol', 'ketamine', 'angiotensin'
+            ];
+
+            let drugName = '';
+            for (let drug of infusionDrugs) {
+                if (lineLower.includes(drug)) {
+                    drugName = drug;
+                    break;
+                }
+            }
+
+            if (!drugName) {
+                drugName = trimmedLine.split(/\s+/)[0].toLowerCase();
+            }
+
+            // Abbreviate using MED_ABBREVIATIONS
+            let abbreviated = drugName;
+            for (let [key, abbrev] of Object.entries(MED_ABBREVIATIONS)) {
+                if (drugName.toLowerCase().includes(key)) {
+                    abbreviated = abbrev;
+                    break;
+                }
+            }
+
+            return {
+                abbreviated: `${abbreviated} gtt`,
+                original: trimmedLine,
+                drugName: drugName,
+                isPRN: false
+            };
+        }
+
+        // 3. HANDLE FLUID INFUSIONS (with mL/hr but not medications)
         if (trimmedLine.match(/ml\/hr/i)) {
             const rateMatch = trimmedLine.match(/(\d+)\s*mL\/hr/i);
             if (rateMatch) {
                 const rate = rateMatch[1];
-                if (trimmedLine.toLowerCase().includes('lactated ringer')) {
-                    return { abbreviated: `LR@${rate}`, original: trimmedLine, drugName: 'lactated ringers' };
-                } else if (trimmedLine.toLowerCase().includes('normal saline') || trimmedLine.toLowerCase().includes('0.9%')) {
-                    return { abbreviated: `NS@${rate}`, original: trimmedLine, drugName: 'normal saline' };
-                } else if (trimmedLine.toLowerCase().includes('d5w')) {
-                    return { abbreviated: `D5W@${rate}`, original: trimmedLine, drugName: 'd5w' };
+                if (lineLower.includes('lactated ringer')) {
+                    return { abbreviated: `LR@${rate}`, original: trimmedLine, drugName: 'lactated ringers', isPRN: false };
+                } else if (lineLower.includes('normal saline') || lineLower.includes('sodium chloride 0.9%')) {
+                    return { abbreviated: `NS@${rate}`, original: trimmedLine, drugName: 'normal saline', isPRN: false };
+                } else if (lineLower.includes('sodium chloride 0.45%')) {
+                    return { abbreviated: `1/2NS@${rate}`, original: trimmedLine, drugName: 'half normal saline', isPRN: false };
+                } else if (lineLower.includes('dextrose 5%') || lineLower.includes('d5w')) {
+                    return { abbreviated: `D5W@${rate}`, original: trimmedLine, drugName: 'd5w', isPRN: false };
                 }
             }
         }
-        
-        // Check for continuous infusion
-        if (trimmedLine.toLowerCase().includes('iv continuous')) {
-            const words = trimmedLine.split(/\s+/);
-            const drugName = words[0].toLowerCase();
-            const abbreviated = abbreviateMedLine(trimmedLine);
-            if (abbreviated && !abbreviated.includes('continuous')) {
-                return { abbreviated: abbreviated + ' gtt', original: trimmedLine, drugName: drugName };
-            }
-        }
-        
-        // Standard medication parsing using double-space separator
+
+        // 4. HANDLE STANDARD MEDICATIONS (with double-space separator)
         const doubleSeparator = trimmedLine.indexOf('  ');
         if (doubleSeparator === -1) {
-            // Try to abbreviate the line as-is
-            const abbreviated = abbreviateMedLine(trimmedLine);
-            return abbreviated ? { abbreviated, original: trimmedLine, drugName: trimmedLine.split(/\s+/)[0].toLowerCase() } : null;
+            // No double separator, try basic parsing
+            return null;
         }
-        
-        const beforeSeparator = trimmedLine.substring(0, doubleSeparator);
-        
-        // Extract drug name (everything before dose/formulation)
-        const drugName = beforeSeparator.replace(/\d+\s*(mg|mcg|unit|%|mL|g)\b.*/i, '').trim().toLowerCase();
-        
-        // Get abbreviated drug name
-        const abbreviated = abbreviateMedLine(trimmedLine);
-        if (!abbreviated) return null;
-        
+
+        const beforeSeparator = trimmedLine.substring(0, doubleSeparator).trim();
+        const afterSeparator = trimmedLine.substring(doubleSeparator + 2).trim();
+
+        // Extract drug name (everything before dose/formulation markers)
+        const formulationMarkers = /\d+\s*(mg|mcg|unit\(s\)|%|mL|g\b)/i;
+        const match = beforeSeparator.match(formulationMarkers);
+
+        let drugName;
+        if (match) {
+            drugName = beforeSeparator.substring(0, match.index).trim();
+        } else {
+            drugName = beforeSeparator.trim();
+        }
+
+        // Remove parentheses content
+        drugName = drugName.replace(/\s*\([^)]*\)/g, '').trim();
+
+        // Parse dose, route, frequency (comma-separated after double space)
+        const parts = afterSeparator.split(',').map(p => p.trim());
+        let dose = parts[0] || '';
+        let route = parts[1] || '';
+        let frequency = parts[2] || '';
+
+        // Clean dose
+        const doseMatch = dose.match(/(\d+\.?\d*)\s*(mg|mcg|g|unit|%|mL|tab)/i);
+        if (doseMatch) {
+            dose = `${doseMatch[1]}${doseMatch[2]}`;
+        } else {
+            dose = '';
+        }
+
+        // Abbreviate route
+        const routeMap = {
+            'Oral': 'PO',
+            'Intravenous': 'IV',
+            'IV Push': 'IV',
+            'IV Piggyback': 'IV',
+            'Intramuscular': 'IM',
+            'Subcutaneous': 'SQ',
+            'Sublingual': 'SL',
+            'Topical': 'TOP',
+            'Rectal': 'PR',
+            'Transdermal': 'TD',
+            'Nebulizer': 'NEB',
+            'NEB': 'NEB',
+            'Nasal': 'IN'
+        };
+        route = routeMap[route] || (route && route.toLowerCase().includes('iv') ? 'IV' : route);
+
+        // Abbreviate frequency
+        const hourMatch = frequency.match(/every\s+(\d+)\s+hours?/i);
+        if (hourMatch) {
+            frequency = `Q${hourMatch[1]}`;
+        } else {
+            const freqMap = {
+                'Daily': 'QD',
+                'Once': 'x1',
+                '2 times a day': 'BID',
+                '3 times a day': 'TID',
+                '4 times a day': 'QID',
+                'As Directed': 'PRN',
+                'every morning': 'QAM',
+                'every evening': 'QPM',
+                'scheduled': ''
+            };
+            for (let [key, value] of Object.entries(freqMap)) {
+                if (frequency.toLowerCase().includes(key.toLowerCase())) {
+                    frequency = value;
+                    break;
+                }
+            }
+        }
+
+        // Abbreviate drug name using MED_ABBREVIATIONS
+        let abbreviated = drugName;
+        const nameLower = drugName.toLowerCase();
+        for (let [key, abbrev] of Object.entries(MED_ABBREVIATIONS)) {
+            if (nameLower.includes(key)) {
+                abbreviated = abbrev;
+                break;
+            }
+        }
+
+        // Format output: name dose frequency route [PRN]
+        let result = abbreviated;
+        if (dose) result += ` ${dose}`;
+        if (frequency) result += ` ${frequency}`;
+        if (route) result += ` ${route}`;
+        if (isPRN) result += ' PRN';
+
         return {
-            abbreviated,
+            abbreviated: result.trim(),
             original: trimmedLine,
-            drugName: drugName
+            drugName: drugName.toLowerCase(),
+            isPRN: isPRN
         };
     }
     
@@ -5563,7 +5692,10 @@ function extractMedsBySystem(text) {
         
         // First pass: assign medications to their systems with abbreviations
         for (const line of medLines) {
-            if (!line.trim() || line.match(/^Medications/i) || line.match(/^\s*(Scheduled|PRN|Continuous):/i)) continue;
+            if (!line.trim() ||
+                line.match(/^Medications/i) ||
+                line.match(/^\s*Active/i) ||
+                line.match(/\s*(Scheduled|PRN|Continuous):/i)) continue;
             
             const parsed = parseMedicationLine(line);
             if (!parsed) continue;
@@ -5580,7 +5712,10 @@ function extractMedsBySystem(text) {
         
         // Second pass: collect all unassigned medications for SKIN
         for (const line of medLines) {
-            if (!line.trim() || line.match(/^Medications/i) || line.match(/^\s*(Scheduled|PRN|Continuous):/i)) continue;
+            if (!line.trim() ||
+                line.match(/^Medications/i) ||
+                line.match(/^\s*Active/i) ||
+                line.match(/\s*(Scheduled|PRN|Continuous):/i)) continue;
             
             const trimmedLine = line.trim();
             if (!assignedMeds.has(trimmedLine.toLowerCase())) {
@@ -9662,7 +9797,9 @@ const MED_ABBREVIATIONS = {
     'filgrastim': 'Neupogen',
     'epoetin': 'Epogen',
     'albumin': 'Albumin',
-    'immunoglobulin': 'IVIG'
+    'immunoglobulin': 'IVIG',
+    'fat emulsion': 'Lipids',
+    'smoflipid': 'Lipids'
 };
 
 // 2. MEDICATION CATEGORIES FOR ORGANIZATION
