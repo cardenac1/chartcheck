@@ -5652,49 +5652,49 @@ function extractMedsBySystem(text) {
     function parseMedicationLine(line) {
         const trimmedLine = line.trim();
         if (!trimmedLine) return null;
-        
-        // Check for fluid infusion
-        if (trimmedLine.match(/ml\/hr/i)) {
-            const rateMatch = trimmedLine.match(/(\d+)\s*mL\/hr/i);
-            if (rateMatch) {
-                const rate = rateMatch[1];
-                if (trimmedLine.toLowerCase().includes('lactated ringer')) {
-                    return { abbreviated: `LR@${rate}`, original: trimmedLine, drugName: 'lactated ringers' };
-                } else if (trimmedLine.toLowerCase().includes('normal saline') || trimmedLine.toLowerCase().includes('0.9%')) {
-                    return { abbreviated: `NS@${rate}`, original: trimmedLine, drugName: 'normal saline' };
-                } else if (trimmedLine.toLowerCase().includes('d5w')) {
-                    return { abbreviated: `D5W@${rate}`, original: trimmedLine, drugName: 'd5w' };
-                }
-            }
-        }
-        
-        // Check for continuous infusion
-        if (trimmedLine.toLowerCase().includes('iv continuous')) {
-            const words = trimmedLine.split(/\s+/);
-            const drugName = words[0].toLowerCase();
-            const abbreviated = abbreviateMedLine(trimmedLine);
-            if (abbreviated && !abbreviated.includes('continuous')) {
-                return { abbreviated: abbreviated + ' gtt', original: trimmedLine, drugName: drugName };
-            }
-        }
-        
-        // Standard medication parsing using double-space separator
-        const doubleSeparator = trimmedLine.indexOf('  ');
-        if (doubleSeparator === -1) {
-            // Try to abbreviate the line as-is
-            const abbreviated = abbreviateMedLine(trimmedLine);
-            return abbreviated ? { abbreviated, original: trimmedLine, drugName: trimmedLine.split(/\s+/)[0].toLowerCase() } : null;
-        }
-        
-        const beforeSeparator = trimmedLine.substring(0, doubleSeparator);
-        
-        // Extract drug name (everything before dose/formulation)
-        const drugName = beforeSeparator.replace(/\d+\s*(mg|mcg|unit|%|mL|g)\b.*/i, '').trim().toLowerCase();
-        
-        // Get abbreviated drug name
+
+        // Use abbreviateMedLine to get the abbreviated version
         const abbreviated = abbreviateMedLine(trimmedLine);
         if (!abbreviated) return null;
-        
+
+        // Extract drug name for categorization
+        let drugName = '';
+
+        // For fluids (NS@100, LR@125, etc.)
+        if (trimmedLine.match(/ml\/hr/i)) {
+            if (trimmedLine.toLowerCase().includes('lactated ringer')) {
+                drugName = 'lactated ringers';
+            } else if (trimmedLine.toLowerCase().includes('sodium chloride 0.9%') || trimmedLine.toLowerCase().includes('normal saline')) {
+                drugName = 'normal saline';
+            } else if (trimmedLine.toLowerCase().includes('dextrose 5%') || trimmedLine.toLowerCase().includes('d5w')) {
+                drugName = 'd5w';
+            } else if (trimmedLine.toLowerCase().includes('plasmalyte')) {
+                drugName = 'plasmalyte';
+            } else if (trimmedLine.toLowerCase().includes('parenteral nutrition')) {
+                drugName = 'parenteral nutrition';
+            } else {
+                drugName = 'fluid';
+            }
+        }
+        // For continuous infusions
+        else if (trimmedLine.toLowerCase().includes('iv continuous')) {
+            drugName = trimmedLine.split(/\s+/)[0].toLowerCase();
+        }
+        // For standard medications
+        else {
+            const doubleSeparator = trimmedLine.indexOf('  ');
+            if (doubleSeparator !== -1) {
+                const beforeSeparator = trimmedLine.substring(0, doubleSeparator);
+                // Extract drug name (everything before dose/formulation)
+                drugName = beforeSeparator.replace(/\d+\s*(mg|mcg|unit|%|mL|g)\b.*/i, '').trim().toLowerCase();
+                // Remove parenthetical text
+                drugName = drugName.replace(/\s*\([^)]*\)/g, '').trim();
+            } else {
+                // No double separator - use first word
+                drugName = trimmedLine.split(/\s+/)[0].toLowerCase();
+            }
+        }
+
         return {
             abbreviated,
             original: trimmedLine,
@@ -5705,6 +5705,14 @@ function extractMedsBySystem(text) {
     // Helper to categorize medication into a system
     function categorizeMed(drugName) {
         const nameLower = drugName.toLowerCase();
+
+        // Special handling for fluids - don't categorize them, return null so they go to ivf
+        const fluidNames = ['normal saline', 'lactated ringers', 'd5w', 'plasmalyte', 'parenteral nutrition', 'fluid'];
+        if (fluidNames.includes(nameLower)) {
+            return null; // Will be added to ivf section separately
+        }
+
+        // Check drug category patterns
         for (const [system, drugs] of Object.entries(categoryPatterns)) {
             for (const drug of drugs) {
                 if (nameLower.includes(drug)) {
@@ -5746,6 +5754,17 @@ function extractMedsBySystem(text) {
             const parsed = parseMedicationLine(line);
             if (!parsed) continue;
 
+            // Check if it's a fluid infusion
+            const fluidNames = ['normal saline', 'lactated ringers', 'd5w', 'plasmalyte', 'parenteral nutrition', 'fluid'];
+            if (fluidNames.includes(parsed.drugName.toLowerCase())) {
+                if (!meds.ivf.some(m => m === parsed.abbreviated)) {
+                    meds.ivf.push(parsed.abbreviated);
+                    assignedMeds.add(parsed.original.toLowerCase());
+                }
+                continue;
+            }
+
+            // Try to categorize by system
             const system = categorizeMed(parsed.drugName);
 
             if (system) {
